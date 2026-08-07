@@ -80,6 +80,238 @@ Without arguments, the priority is:
 3. Unstaged changes (`git diff`)
 4. Latest commit (`git diff HEAD~1`)
 
+## GitLab CI Integration
+
+### Build & Publish CLI
+
+#### Option 1: Build Locally
+
+```bash
+# Build for current platform
+bun build src/index.ts --compile --outfile dist/code-review
+
+# Build for Linux CI
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/code-review-linux-x64
+
+# Build for macOS
+bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/code-review-darwin-arm64
+```
+
+#### Option 2: Publish to GitHub Releases
+
+Create `.github/workflows/release.yml`:
+
+```yaml
+name: Release CLI
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            name: code-review-linux-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            name: code-review-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.name }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.name }}
+```
+
+Then:
+```bash
+git tag v1.0.0
+git push --tags
+# Binary auto-published to GitHub Releases
+```
+
+#### Option 3: Publish to Private npm Registry
+
+```bash
+# Build
+bun build src/index.ts --compile --outfile dist/code-review
+
+# Package.json: add bin field
+# "bin": { "code-review": "./dist/code-review" }
+
+# Publish to private registry
+npm publish --registry https://your-private-registry.com
+
+# CI usage
+npx --registry https://your-private-registry.com code-review
+```
+
+#### Option 4: Self-Hosted (GitLab Package Registry / Nexus / Minio)
+
+```bash
+# Build
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile code-review-linux-x64
+
+# Upload to GitLab Generic Packages
+curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --upload-file code-review-linux-x64 \
+  "https://gitlab.com/api/v4/projects/$PROJECT_ID/packages/generic/code-review/v1.0.0/code-review-linux-x64"
+
+# CI usage
+curl -L -o code-review \
+  "https://gitlab.com/api/v4/projects/$PROJECT_ID/packages/generic/code-review/v1.0.0/code-review-linux-x64"
+chmod +x code-review
+```
+
+#### Option 5: Docker Image
+
+```dockerfile
+FROM oven/bun:latest AS builder
+WORKDIR /app
+COPY . .
+RUN bun install && bun build src/index.ts --compile --outfile /usr/local/bin/code-review
+
+FROM debian:bookworm-slim
+COPY --from=builder /usr/local/bin/code-review /usr/local/bin/code-review
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["code-review"]
+```
+
+```bash
+# Build & push
+docker build -t your-registry.com/code-review:v1 .
+docker push your-registry.com/code-review:v1
+
+# CI usage
+docker run --rm -e DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY your-registry.com/code-review:v1
+```
+
+### Step 1: Prepare Your Project
+
+Add review rules to your project repository:
+
+```
+your-project/
+├── src/
+├── .gitlab-ci.yml
+└── .code-review/                  # Review config + rules
+    ├── rules/
+    │   ├── typescript.md          # Your team's TS standards
+    │   ├── security.md            # Security rules
+    │   └── project-specific.md    # Project-specific rules
+```
+
+Configure via environment variables in `.gitlab-ci.yml`:
+
+```yaml
+variables:
+  RULES_DIR: .code-review/rules      # Rules directory (default)
+  REVIEW_LANGUAGE: 中文               # Output language (default)
+```
+
+Example `.code-review/rules/typescript.md`:
+
+```markdown
+# TypeScript Standards
+
+## Must Fix
+- No `any` type, use `unknown` or specific types
+- No non-null assertion `!`, use `?.` and `??`
+
+## Suggested
+- Functions must have explicit return types
+- Use `import type` for type-only imports
+```
+
+### Step 2: Set Up GitLab CI/CD Variables
+
+Go to **Settings → CI/CD → Variables**, add:
+
+| Variable | Value | Protected |
+|----------|-------|-----------|
+| `DEEPSEEK_API_KEY` | `sk-xxx` | Yes |
+
+### Step 3: Add `.gitlab-ci.yml`
+
+```yaml
+code-review:
+  stage: test
+  image: debian:bookworm-slim
+  variables:
+    HF_ENDPOINT: https://hf-mirror.com
+    REVIEW_LANGUAGE: 中文
+  cache:
+    key: code-review-agent
+    paths:
+      - .codegraph/                  # CodeGraph index (persistent)
+      - .cache/huggingface/          # Embedding model (cached)
+  before_script:
+    - apt-get update && apt-get install -y curl git
+    # Download CLI binary to cached directory
+    - curl -L -o .code-review-cli https://github.com/your-org/code-review-agent/releases/latest/download/code-review-linux-x64
+    - chmod +x .code-review-cli
+  script:
+    - ./.code-review-cli             # Auto-detects MR changes
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+```
+
+### Step 4: Create MR → Auto Review
+
+When you create a Merge Request, the pipeline automatically:
+
+```
+1. Downloads CLI binary (cached)
+2. Syncs CodeGraph index (cached)
+3. Indexes your rules from .code-review/rules/
+4. Analyzes MR changes (branch vs target branch)
+5. Outputs review results in pipeline logs
+```
+
+### Rules Management
+
+Rules live in your project repo. To update:
+
+```bash
+# Edit rules
+vim .code-review/rules/typescript.md
+
+# Commit and push
+git add .code-review/rules/
+git commit -m "chore: update review rules"
+git push
+```
+
+Next MR will automatically use the updated rules.
+
+### Full Example
+
+```
+$ code-review
+
+🔍 正在分析...
+📊 同步代码图谱...
+  ✅ Indexed 45 files — 312 nodes, 589 edges
+
+🔧 [1/20] gitDiff { target: "origin/main" }
+🔧 [1/20] readFile { path: "src/auth/login.ts" }
+🔧 [2/20] analyzeImpact { symbol: "validateUser" }
+🔧 [2/20] getCallChain { symbol: "validateUser", direction: "callers" }
+🔧 [3/20] searchKnowledge { query: "认证 安全 best practice" }
+🔧 [4/20] saveReview { codeType: "TypeScript+React前端" }
+
+📋 Review 结果:
+  🔴 2 个必须修复
+  🟡 3 个建议修复
+  🟢 1 个可选优化
+```
+
 ## Project Structure
 
 ```

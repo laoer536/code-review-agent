@@ -79,6 +79,238 @@ bun run src/index.ts "检查 src/agent/ 目录的代码质量"
 3. 未暂存变更（`git diff`）
 4. 最近一次 commit（`git diff HEAD~1`）
 
+## GitLab CI 集成
+
+### 打包 & 发布 CLI
+
+#### 方式一：本地打包
+
+```bash
+# 打包当前平台
+bun build src/index.ts --compile --outfile dist/code-review
+
+# 打包 Linux CI 用
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/code-review-linux-x64
+
+# 打包 macOS
+bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/code-review-darwin-arm64
+```
+
+#### 方式二：发布到 GitHub Releases
+
+创建 `.github/workflows/release.yml`：
+
+```yaml
+name: Release CLI
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            name: code-review-linux-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            name: code-review-darwin-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.name }}
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.name }}
+```
+
+然后：
+```bash
+git tag v1.0.0
+git push --tags
+# 二进制文件自动发布到 GitHub Releases
+```
+
+#### 方式三：发布到私有 npm 仓库
+
+```bash
+# 打包
+bun build src/index.ts --compile --outfile dist/code-review
+
+# package.json 中添加 bin 字段
+# "bin": { "code-review": "./dist/code-review" }
+
+# 发布到私有仓库
+npm publish --registry https://your-private-registry.com
+
+# CI 中使用
+npx --registry https://your-private-registry.com code-review
+```
+
+#### 方式四：自托管（GitLab Package Registry / Nexus / Minio）
+
+```bash
+# 打包
+bun build src/index.ts --compile --target=bun-linux-x64 --outfile code-review-linux-x64
+
+# 上传到 GitLab Generic Packages
+curl --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+  --upload-file code-review-linux-x64 \
+  "https://gitlab.com/api/v4/projects/$PROJECT_ID/packages/generic/code-review/v1.0.0/code-review-linux-x64"
+
+# CI 中使用
+curl -L -o code-review \
+  "https://gitlab.com/api/v4/projects/$PROJECT_ID/packages/generic/code-review/v1.0.0/code-review-linux-x64"
+chmod +x code-review
+```
+
+#### 方式五：Docker 镜像
+
+```dockerfile
+FROM oven/bun:latest AS builder
+WORKDIR /app
+COPY . .
+RUN bun install && bun build src/index.ts --compile --outfile /usr/local/bin/code-review
+
+FROM debian:bookworm-slim
+COPY --from=builder /usr/local/bin/code-review /usr/local/bin/code-review
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+ENTRYPOINT ["code-review"]
+```
+
+```bash
+# 构建 & 推送
+docker build -t your-registry.com/code-review:v1 .
+docker push your-registry.com/code-review:v1
+
+# CI 中使用
+docker run --rm -e DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY your-registry.com/code-review:v1
+```
+
+### 第一步：准备项目
+
+在你的项目仓库中添加 review 规则：
+
+```
+your-project/
+├── src/
+├── .gitlab-ci.yml
+└── .code-review/                  # Review 配置 + 规则
+    ├── rules/
+    │   ├── typescript.md          # 团队 TS 规范
+    │   ├── security.md            # 安全规则
+    │   └── project-specific.md    # 项目专属规则
+```
+
+在 `.gitlab-ci.yml` 中通过环境变量配置：
+
+```yaml
+variables:
+  RULES_DIR: .code-review/rules      # 规则目录（默认）
+  REVIEW_LANGUAGE: 中文               # 输出语言（默认）
+```
+
+`.code-review/rules/typescript.md` 示例：
+
+```markdown
+# TypeScript 规范
+
+## 必须修复
+- 禁止使用 any，用 unknown 或具体类型
+- 禁止非空断言 !，用 ?. 和 ??
+
+## 建议修复
+- 函数必须显式标注返回类型
+- 纯类型导入使用 import type
+```
+
+### 第二步：配置 GitLab CI/CD 变量
+
+进入 **Settings → CI/CD → Variables**，添加：
+
+| 变量 | 值 | Protected |
+|------|-----|-----------|
+| `DEEPSEEK_API_KEY` | `sk-xxx` | Yes |
+
+### 第三步：添加 `.gitlab-ci.yml`
+
+```yaml
+code-review:
+  stage: test
+  image: debian:bookworm-slim
+  variables:
+    HF_ENDPOINT: https://hf-mirror.com
+    REVIEW_LANGUAGE: 中文
+  cache:
+    key: code-review-agent
+    paths:
+      - .codegraph/                  # CodeGraph 索引（持久化）
+      - .cache/huggingface/          # Embedding 模型（缓存）
+  before_script:
+    - apt-get update && apt-get install -y curl git
+    # 下载 CLI 到缓存目录
+    - curl -L -o .code-review-cli https://github.com/your-org/code-review-agent/releases/latest/download/code-review-linux-x64
+    - chmod +x .code-review-cli
+  script:
+    - ./.code-review-cli             # 自动检测 MR 变更
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+```
+
+### 第四步：创建 MR → 自动 Review
+
+创建 Merge Request 后，流水线自动：
+
+```
+1. 下载 CLI 二进制文件（缓存）
+2. 同步 CodeGraph 索引（缓存）
+3. 索引 .code-review/rules/ 中的规则
+4. 分析 MR 变更（分支 vs 目标分支）
+5. 在流水线日志中输出 review 结果
+```
+
+### 规则管理
+
+规则存放在项目仓库中，更新方式：
+
+```bash
+# 编辑规则
+vim .code-review/rules/typescript.md
+
+# 提交推送
+git add .code-review/rules/
+git commit -m "chore: 更新 review 规则"
+git push
+```
+
+下次 MR 会自动使用更新后的规则。
+
+### 完整示例
+
+```
+$ code-review
+
+🔍 正在分析...
+📊 同步代码图谱...
+  ✅ Indexed 45 files — 312 nodes, 589 edges
+
+🔧 [1/20] gitDiff { target: "origin/main" }
+🔧 [1/20] readFile { path: "src/auth/login.ts" }
+🔧 [2/20] analyzeImpact { symbol: "validateUser" }
+🔧 [2/20] getCallChain { symbol: "validateUser", direction: "callers" }
+🔧 [3/20] searchKnowledge { query: "认证 安全 best practice" }
+🔧 [4/20] saveReview { codeType: "TypeScript+React前端" }
+
+📋 Review 结果:
+  🔴 2 个必须修复
+  🟡 3 个建议修复
+  🟢 1 个可选优化
+```
+
 ## 项目结构
 
 ```

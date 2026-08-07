@@ -4,6 +4,7 @@ import { tools, toolDefinitions, validateToolArgs } from '../tools';
 import { getProjectName, getCodeType } from '../memory/memory';
 import { search } from '../rag/vectorStore';
 import { syncGraph } from '../graph/sync';
+import { syncRules } from '../graph/syncRules';
 import type { ChatCompletionMessageParam } from './types';
 
 const MAX_ITERATIONS = 20;
@@ -56,6 +57,11 @@ export async function runAgent(question: string): Promise<string> {
   console.log('📊 同步代码图谱...');
   const graphResult = await syncGraph(process.cwd());
   console.log(graphResult);
+
+  // 索引目标项目的规则文件
+  console.log('📚 索引规则...');
+  const rulesResult = await syncRules(process.cwd());
+  console.log(rulesResult);
 
   const system = await buildSystemPrompt(project, question);
 
