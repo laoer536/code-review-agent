@@ -397,6 +397,37 @@ Vectorized rule storage with semantic retrieval:
 
 Agent automatically searches the knowledge base at startup and injects relevant rules into the system prompt.
 
+### Rule Indexing Optimization
+
+Rules are indexed in two parts with an incremental strategy to avoid redundant embedding:
+
+| Source | Path | Strategy |
+|--------|------|----------|
+| Built-in rules | `rules/` (CLI bundled) | Always indexed (small, a few ms) |
+| Project rules | `.code-review/rules/` or `RULES_DIR` env | **Incremental** — only when changed |
+
+**Project rules incremental detection flow:**
+
+```
+syncRules starts
+  │
+  ├─ Built-in rules → always index
+  │
+  ├─ .code-review/rules/ doesn't exist → skip
+  │
+  └─ git diff --name-only to detect changes
+       │
+       ├─ CI/MR: git diff ${target}...HEAD (all branch commits vs target)
+       │
+       └─ Local: git diff HEAD~1 HEAD (latest commit)
+            │
+            ├─ Rules dir changed → full re-index
+            │
+            └─ No changes → skip, reuse existing vectors
+```
+
+**Effect:** In CI with consecutive MRs, if rule files haven't changed, embedding is skipped entirely, saving startup time.
+
 ### Data Persistence
 
 Runtime data is stored in `.code-review-agent/` (gitignored):
@@ -408,7 +439,7 @@ Runtime data is stored in `.code-review-agent/` (gitignored):
 ```
 
 - **First run**: auto-creates directory, initializes DB, downloads embedding model
-- **Subsequent runs**: incrementally updates rule index, reuses existing data
+- **Subsequent runs**: uses git diff to detect rule changes, skips re-indexing if unchanged
 - **CI caching**: always cache this directory in CI to avoid re-indexing rules and re-downloading the model
 
 ### Tool System
