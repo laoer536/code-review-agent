@@ -7,6 +7,7 @@
     "code-review": "./src/index.ts"
   },
   "scripts": {
+    "build": "bun run build.ts",
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'"
   },

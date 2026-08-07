@@ -1,9 +1,8 @@
 import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
+import { PROJECT_DATA_DIR } from '../agent/root';
 
-// 存到 agent 项目自身目录下，不是用户的 cwd
-const AGENT_ROOT = join(import.meta.dir, '../..');
-const MEMORY_DIR = join(AGENT_ROOT, '.code-review-agent');
-const MEMORY_FILE = join(MEMORY_DIR, 'memory.json');
+const MEMORY_FILE = join(PROJECT_DATA_DIR, 'memory.json');
 
 interface ProjectMemory {
   codeType: string;
@@ -21,7 +20,9 @@ async function load(): Promise<MemoryData> {
 }
 
 async function save(data: MemoryData): Promise<void> {
-  await Bun.$`mkdir -p ${MEMORY_DIR}`;
+  if (!existsSync(PROJECT_DATA_DIR)) {
+    mkdirSync(PROJECT_DATA_DIR, { recursive: true });
+  }
   await Bun.write(MEMORY_FILE, JSON.stringify(data, null, 2));
 }
 

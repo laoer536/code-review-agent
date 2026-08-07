@@ -2,9 +2,7 @@ import { Glob } from 'bun';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { indexDocument } from '../rag/vectorStore';
-
-const AGENT_ROOT = join(import.meta.dir, '../..');
-const BUILTIN_RULES_DIR = join(AGENT_ROOT, 'rules');
+import { BUILTIN_RULES_DIR } from '../agent/root';
 
 /**
  * 索引单个目录下的规则文件

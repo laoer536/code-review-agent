@@ -1,15 +1,21 @@
 import { Database } from 'bun:sqlite';
 import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { load } from 'sqlite-vec';
 import { embed, embedBatch } from '../llm/embedding';
+import { PROJECT_DATA_DIR } from '../agent/root';
 
-const AGENT_ROOT = join(import.meta.dir, '../..');
-const DB_FILE = join(AGENT_ROOT, '.code-review-agent', 'vectors.db');
+const DB_FILE = join(PROJECT_DATA_DIR, 'vectors.db');
 
 let db: Database | null = null;
 
 function getDb(): Database {
   if (db) return db;
+
+  // 确保数据目录存在
+  if (!existsSync(PROJECT_DATA_DIR)) {
+    mkdirSync(PROJECT_DATA_DIR, { recursive: true });
+  }
 
   // macOS 需要用系统 SQLite（Bun 内置的不支持扩展加载）
   if (process.platform === 'darwin') {
