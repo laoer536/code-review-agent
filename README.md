@@ -1,115 +1,132 @@
 # Code Review Agent
 
-基于 AI 的代码审查 Agent，支持自动分析代码变更、语义检索规则知识库、记忆项目技术栈。
+An AI-powered code review agent that supports automatic change analysis, semantic rule retrieval via RAG, and project tech stack memory.
 
-## 架构
+[中文文档](./README_CN.md)
+
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
 │                    Agent Loop                        │
 │                                                      │
-│  用户提问 → 构建 Prompt → LLM 推理 → 工具调用 → 结果   │
+│  User Query → Build Prompt → LLM Reasoning → Tools   │
 │                ↑                              │      │
-│                └──────── 多轮循环 ─────────────┘      │
+│                └──────── Multi-turn Loop ─────┘      │
 │                                                      │
-│  工具:                                               │
-│    listFiles      查看项目文件结构                     │
-│    readFile       读取文件内容                        │
-│    gitDiff        查看 git 代码变更                   │
-│    saveReview     记住项目技术栈                      │
-│    indexDocument  索引规则到知识库                     │
-│    searchKnowledge 语义搜索知识库                     │
+│  Tools:                                              │
+│    listFiles        Browse project file structure     │
+│    readFile         Read file content                 │
+│    gitDiff          View git changes                  │
+│    saveReview       Remember project tech stack       │
+│    indexDocument    Index rules into knowledge base   │
+│    searchKnowledge  Semantic search knowledge base    │
 │                                                      │
-│  记忆:                                               │
-│    memory         项目技术栈记忆（JSON）               │
-│    RAG            规则知识库（SQLite + 向量检索）       │
+│  Memory:                                             │
+│    memory           Project tech stack (JSON)         │
+│    RAG              Rule knowledge base (SQLite+vec)  │
 └─────────────────────────────────────────────────────┘
 ```
 
-## 快速开始
+## Quick Start
 
-### 安装
+### Install
 
 ```bash
 bun install
 ```
 
-### 配置环境变量
+### Configure Environment
 
-创建 `.env` 文件：
+Create a `.env` file:
 
 ```bash
-# LLM（必填）
+# LLM (required)
 DEEPSEEK_API_KEY=sk-xxx
 
-# 首次下载 embedding 模型需要网络访问 huggingface.co
-# 如果网络不通，设置镜像或代理：
+# Review output language (optional, default: 中文)
+# Supports: 中文, English, 日本語, 한국어, etc.
+REVIEW_LANGUAGE=中文
+
+# Embedding model download (first run only, cached afterwards)
+# Use mirror for China mainland
 HF_ENDPOINT=https://hf-mirror.com
-# 或
+# Or use proxy
 # https_proxy=http://127.0.0.1:7890
+# http_proxy=http://127.0.0.1:7890
+
+# MR target branch (auto-detected in CI, optional for local)
+# GitHub Actions: auto-reads GITHUB_BASE_REF
+# GitLab CI: auto-reads CI_MERGE_REQUEST_TARGET_BRANCH_NAME
+# TARGET_BRANCH=main
 ```
 
-### 使用
+### Usage
 
 ```bash
-# 审查当前项目的 git 变更
-bun run src/index.ts "帮我 review 当前的代码变更"
-
-# 分析特定目录
-bun run src/index.ts "检查 src/agent/ 目录的代码质量"
-
-# 无参数运行显示帮助
+# No args: auto-detect MR changes and review
 bun run src/index.ts
+
+# Custom review task
+bun run src/index.ts "review my code changes"
+
+# Review specific directory
+bun run src/index.ts "check code quality in src/agent/"
 ```
 
-## 项目结构
+Without arguments, the priority is:
+1. MR changes (branch vs target branch via CI env vars)
+2. Staged changes (`git diff --staged`)
+3. Unstaged changes (`git diff`)
+4. Latest commit (`git diff HEAD~1`)
+
+## Project Structure
 
 ```
 src/
-├── index.ts                  # Review CLI 入口
-├── indexRules.ts             # 规则索引 CLI 入口
+├── index.ts                  # Review CLI entry
+├── indexRules.ts             # Rule indexing CLI entry
 ├── agent/
-│   ├── agent.ts              # Agent Loop（多轮工具调用）
-│   ├── prompt.ts             # System Prompt（审查维度 + 输出格式）
-│   └── types.ts              # 类型定义
+│   ├── agent.ts              # Agent Loop (multi-turn tool calling)
+│   ├── prompt.ts             # System Prompt (review dimensions + output format)
+│   └── types.ts              # Type definitions
 ├── llm/
-│   ├── client.ts             # LLM 对话客户端（DeepSeek API）
-│   └── embedding.ts          # Embedding 客户端（本地模型 all-MiniLM-L6-v2）
+│   ├── client.ts             # LLM chat client (DeepSeek API)
+│   └── embedding.ts          # Embedding client (local model all-MiniLM-L6-v2)
 ├── rag/
-│   └── vectorStore.ts        # 向量存储（SQLite + sqlite-vec）
+│   └── vectorStore.ts        # Vector store (SQLite + sqlite-vec)
 ├── memory/
-│   └── memory.ts             # 项目技术栈记忆（JSON 文件）
+│   └── memory.ts             # Project tech stack memory (JSON file)
 └── tools/
-    ├── index.ts              # 工具注册 + zod 参数校验
-    ├── listFiles.ts          # 查看文件列表
-    ├── readFile.ts           # 读取文件内容
-    ├── gitDiff.ts            # 查看 git diff
-    ├── saveReview.ts         # 保存技术栈记忆
-    ├── indexDocument.ts      # 索引文档到知识库
-    └── searchKnowledge.ts    # 语义搜索知识库
+    ├── index.ts              # Tool registration + zod validation
+    ├── listFiles.ts          # Browse file list
+    ├── readFile.ts           # Read file content
+    ├── gitDiff.ts            # View git diff
+    ├── saveReview.ts         # Save tech stack memory
+    ├── indexDocument.ts      # Index document to knowledge base
+    └── searchKnowledge.ts    # Semantic search knowledge base
 
-rules/                        # 示例规则文件（用户可自定义）
-├── general.md                # 通用规范
-├── typescript.md             # TypeScript 规范
-└── security.md               # 安全规范
+rules/                        # Example rule files (customizable)
+├── general.md                # General standards
+├── typescript.md             # TypeScript standards
+└── security.md               # Security standards
 ```
 
-## 核心模块
+## Core Modules
 
 ### Agent Loop
 
-经典的 ReAct 循环（Reasoning + Acting）：
+Classic ReAct loop (Reasoning + Acting):
 
-1. 用户提问 + system prompt → 发送给 LLM
-2. LLM 返回 tool_calls → 执行工具 → 结果追加到 messages
-3. 重复直到 LLM 返回纯文本（或达到最大 20 轮迭代）
+1. User query + system prompt → send to LLM
+2. LLM returns tool_calls → execute tools → append results to messages
+3. Repeat until LLM returns plain text (or max 20 iterations)
 
-### Memory（记忆）
+### Memory
 
-按项目隔离，记住每个项目的技术栈：
+Isolated by project, remembers each project's tech stack:
 
-```
-.code-review-agent/memory.json
+```json
 {
   "code-review-agent": {
     "codeType": "TypeScript+Bun CLI工具",
@@ -118,192 +135,187 @@ rules/                        # 示例规则文件（用户可自定义）
 }
 ```
 
-- 项目名自动从 `git remote` 提取
-- review 时自动注入 system prompt
+- Project name auto-detected from `git remote`
+- Auto-injected into system prompt during review
 
-### RAG（知识库）
+### RAG (Knowledge Base)
 
-将规则文档向量化存储，review 时语义检索相关规则：
+Vectorized rule storage with semantic retrieval:
 
-- **Embedding**: `@huggingface/transformers` + `Xenova/all-MiniLM-L6-v2`（384 维，本地运行）
-- **存储**: SQLite + sqlite-vec（cosine 相似度搜索）
-- **分块**: 按段落分块，每块不超过 1000 字符
+- **Embedding**: `@huggingface/transformers` + `Xenova/all-MiniLM-L6-v2` (384 dimensions, local)
+- **Storage**: SQLite + sqlite-vec (cosine similarity search)
+- **Chunking**: Paragraph-based, max 1000 chars per chunk
 
-Agent 启动时自动用用户问题搜索知识库，将相关规则注入 system prompt。
+Agent automatically searches the knowledge base at startup and injects relevant rules into the system prompt.
 
-### 工具系统
+### Tool System
 
-所有工具使用 zod schema 定义参数，自动校验 LLM 传入的参数：
+All tools use zod schema for parameter validation:
 
 ```ts
-// 定义 schema
 export const readFileSchema = z.object({
-  path: z.string().describe("要读取的文件路径"),
+  path: z.string().describe("File path to read"),
 });
 
-// 工具函数
 export async function readFile(input: { path: string }): Promise<string> {
   // ...
 }
 ```
 
-## 规则知识库管理
+## Rule Knowledge Base Management
 
-用户可以自定义 review 规则，索引到知识库中供 Agent 参考。
+Users can customize review rules and index them into the knowledge base.
 
-### 规则文件格式
+### Rule File Format
 
-在 `rules/` 目录下创建 Markdown 文件：
+Create Markdown files in the `rules/` directory:
 
 ```
 rules/
-├── general.md        # 通用规范
-├── typescript.md     # TypeScript 规范
-├── security.md       # 安全规范
-└── react.md          # React 规范（自定义）
+├── general.md        # General standards
+├── typescript.md     # TypeScript standards
+├── security.md       # Security standards
+└── react.md          # React standards (custom)
 ```
 
-### 索引规则
+### Index Rules
 
 ```bash
-# 索引整个目录
+# Index entire directory
 bun run src/indexRules.ts index ./rules
 
-# 索引单个文件
+# Index single file
 bun run src/indexRules.ts index ./rules/typescript.md
 ```
 
-### 管理知识库
+### Manage Knowledge Base
 
 ```bash
-# 查看已索引的规则
+# List indexed rules
 bun run src/indexRules.ts list
 
-# 删除指定规则
+# Remove specific rule
 bun run src/indexRules.ts remove typescript.md
 
-# 清空所有规则
+# Clear all rules
 bun run src/indexRules.ts clear
 ```
 
-### 工作流程
+### Workflow
 
 ```
-1. 编写规则文件（Markdown）
-2. 运行 index 命令索引到向量库
-3. Agent review 时自动检索相关规则
-4. 更新规则后重新 index 即可覆盖
+1. Write rule files (Markdown)
+2. Run index command to store in vector DB
+3. Agent automatically retrieves relevant rules during review
+4. Re-index after updating rules
 ```
 
 ## Demo
 
-以下是对 `src/indexRules.ts` 的真实 review 输出：
+Real review output for `src/indexRules.ts`:
 
 ```
 $ bun run src/index.ts "review src/indexRules.ts"
 
-🔍 正在分析...
+🔍 Analyzing...
 
-🔧 [1/20] 调用工具: gitDiff { file: "src/indexRules.ts", staged: false }
-🔧 [1/20] 调用工具: readFile { path: "src/indexRules.ts" }
-🔧 [2/20] 调用工具: readFile { path: "src/rag/vectorStore.ts" }
-🔧 [2/20] 调用工具: readFile { path: "src/llm/embedding.ts" }
-🔧 [3/20] 调用工具: saveReview { codeType: "TypeScript+Bun CLI工具" }
+🔧 [1/20] Tool: gitDiff { file: "src/indexRules.ts", staged: false }
+🔧 [1/20] Tool: readFile { path: "src/indexRules.ts" }
+🔧 [2/20] Tool: readFile { path: "src/rag/vectorStore.ts" }
+🔧 [2/20] Tool: readFile { path: "src/llm/embedding.ts" }
+🔧 [3/20] Tool: saveReview { codeType: "TypeScript+Bun CLI工具" }
 
-📋 Review 结果:
+📋 Review Result:
 ```
 
-### 🔴 必须修复
+### 🔴 Must Fix
 
-**1. `indexFile:38` — 使用非空断言 `!`，违反 TypeScript 规范**
+**1. `indexFile:38` — Non-null assertion `!` violates TypeScript standards**
 
 ```typescript
 const name = filePath.split("/").pop()!;
 ```
 
-根据项目规范"不要使用 `!` 非空断言"，且硬编码 `/` 在 Windows 上会出问题。建议用 `path.basename()` 替代。
+Use `path.basename()` instead for cross-platform safety.
 
 ---
 
-**2. `indexDir:48` — 路径拼接使用硬编码 `/`**
+**2. `indexDir:48` — Hardcoded `/` in path concatenation**
 
 ```typescript
 const fullPath = `${dirPath}/${file}`;
 ```
 
-跨平台兼容性问题，应使用 `path.join()`。
+Use `path.join()` for cross-platform compatibility.
 
 ---
 
-**3. `index case:68-73` — 裸 catch 吞掉所有异常**
+**3. `index case:68-73` — Bare catch swallows all exceptions**
 
 ```typescript
 try {
   const stat = await import("fs/promises").then(fs => fs.stat(target));
-  // ...
 } catch {
-  console.error(`❌ 路径不存在: ${target}`);
+  console.error(`❌ Path not found: ${target}`);
 }
 ```
 
-无论什么原因失败都只提示"路径不存在"，且动态 `import("fs/promises")` 在 Bun 中不必要。
+All failures show "path not found" regardless of actual cause. Use static import and detailed error handling.
 
 ---
 
-### 🟡 建议修复
+### 🟡 Suggested Fix
 
-**4. `indexDir:49` — 单文件读取无容错**
+**4. `indexDir:49` — No per-file error tolerance**
 
 ```typescript
-const text = await Bun.file(fullPath).text();  // 无检查
+const text = await Bun.file(fullPath).text();  // No check
 ```
 
-某个文件读取失败会中断整个循环，已索引的文件无法回滚。建议加 try-catch 单文件容错。
+One file failure breaks the entire loop. Add try-catch per file.
 
 ---
 
-**5. 第 59 行 — 顶层日志在不需要 embedding 的命令时产生误导**
+**5. Line 59 — Misleading log for non-embedding commands**
 
 ```typescript
-console.log("⏳ 加载 embedding 模型...\n");
+console.log("⏳ Loading embedding model...\n");
 ```
 
-`list`、`remove`、`clear` 命令不需要 embedding，但仍会打印此日志。
+`list`, `remove`, `clear` commands don't need embedding but still print this.
 
 ---
 
-### 🟢 可选优化
+### 🟢 Optional Optimization
 
-**6. `embedBatch`（`src/llm/embedding.ts`）逐条处理，未真正批量**
+**6. `embedBatch` is serial, not truly batch**
 
-函数名叫 `embedBatch` 但实际串行逐条调用，pipeline 应支持数组输入做真正批量推理。
-
----
-
-**7. 缺少 `--help` / `-h` 标志支持**
-
-只有输入未知命令时才显示帮助，建议增加 `--help`、`-h` 支持。
+Function name suggests batch processing but runs sequentially.
 
 ---
 
-| 严重程度 | 数量 |
-|---------|------|
-| 🔴 必须修复 | 3 |
-| 🟡 建议修复 | 2 |
-| 🟢 可选优化 | 2 |
+**7. Missing `--help` / `-h` flag support**
 
-## 审查维度
+---
 
-| 优先级 | 维度 | 示例 |
-|--------|------|------|
-| 🔴 必须修复 | Bug、安全漏洞 | 空指针、SQL 注入、硬编码密钥 |
-| 🟡 建议修复 | 性能、错误处理、规范 | N+1 查询、缺少 try-catch |
-| 🟢 可选优化 | 可读性、可维护性 | 复杂逻辑拆分、死代码 |
+| Severity | Count |
+|----------|-------|
+| 🔴 Must Fix | 3 |
+| 🟡 Suggested | 2 |
+| 🟢 Optional | 2 |
 
-## 技术栈
+## Review Dimensions
+
+| Priority | Dimension | Examples |
+|----------|-----------|----------|
+| 🔴 Must Fix | Bugs, Security | Null pointer, SQL injection, hardcoded secrets |
+| 🟡 Suggested | Performance, Error handling | N+1 queries, missing try-catch |
+| 🟢 Optional | Readability, Maintainability | Complex logic refactoring, dead code |
+
+## Tech Stack
 
 - **Runtime**: Bun
-- **LLM**: DeepSeek API（通过 OpenAI SDK）
-- **Embedding**: `@huggingface/transformers`（本地模型）
-- **向量存储**: SQLite + sqlite-vec
-- **参数校验**: zod
+- **LLM**: DeepSeek API (via OpenAI SDK)
+- **Embedding**: `@huggingface/transformers` (local model)
+- **Vector Store**: SQLite + sqlite-vec
+- **Validation**: zod

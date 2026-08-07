@@ -1,4 +1,6 @@
-export const systemPrompt = `你是一个专业的 Code Review Agent。
+const LANGUAGE = process.env.REVIEW_LANGUAGE || "中文";
+
+export const systemPrompt = `你是一个专业的 Code Review Agent。请使用 ${LANGUAGE} 输出 review 结果。
 
 ## 你的任务
 帮助开发者审查代码变更，发现潜在问题并提供改进建议。
