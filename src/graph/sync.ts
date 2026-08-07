@@ -1,5 +1,5 @@
-import { existsSync } from "fs";
-import { join } from "path";
+import { existsSync } from 'fs';
+import { join } from 'path';
 
 /**
  * 同步目标项目的 CodeGraph 索引
@@ -7,7 +7,7 @@ import { join } from "path";
  * - 后续：codegraph sync（增量更新）
  */
 export async function syncGraph(projectPath: string): Promise<string> {
-  const graphDir = join(projectPath, ".codegraph");
+  const graphDir = join(projectPath, '.codegraph');
 
   try {
     if (existsSync(graphDir)) {

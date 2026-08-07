@@ -1,4 +1,4 @@
-import { runAgent } from "./agent/agent";
+import { runAgent } from './agent/agent';
 
 /**
  * 获取 MR 目标分支
@@ -7,15 +7,15 @@ import { runAgent } from "./agent/agent";
 async function getTargetBranch(): Promise<string | null> {
   // CI 环境变量
   const ciTarget =
-    process.env.GITHUB_BASE_REF ||           // GitHub Actions
+    process.env.GITHUB_BASE_REF || // GitHub Actions
     process.env.CI_MERGE_REQUEST_TARGET_BRANCH_NAME || // GitLab CI
-    process.env.TARGET_BRANCH ||             // 通用
+    process.env.TARGET_BRANCH || // 通用
     null;
 
   if (ciTarget) return ciTarget;
 
   // 本地：检测 origin/main 或 origin/master
-  for (const branch of ["origin/main", "origin/master"]) {
+  for (const branch of ['origin/main', 'origin/master']) {
     try {
       await Bun.$`git rev-parse ${branch}`.quiet();
       return branch;
@@ -40,7 +40,7 @@ async function getMRChanges(): Promise<string | null> {
     }
 
     // 在目标分支上，看最近一次 commit
-    if (branch === target.replace("origin/", "")) {
+    if (branch === target.replace('origin/', '')) {
       const diff = await Bun.$`git diff HEAD~1 HEAD --stat`.text();
       return diff.trim() || null;
     }
@@ -84,7 +84,7 @@ async function buildDefaultQuestion(): Promise<string | null> {
   return null;
 }
 
-const args = process.argv.slice(2).join(" ");
+const args = process.argv.slice(2).join(' ');
 const question = args || (await buildDefaultQuestion());
 
 if (!question) {
@@ -103,9 +103,9 @@ if (!question) {
   process.exit(0);
 }
 
-console.log("🔍 正在分析...\n");
+console.log('🔍 正在分析...\n');
 
 const answer = await runAgent(question);
 
-console.log("\n📋 Review 结果:\n");
+console.log('\n📋 Review 结果:\n');
 console.log(answer);

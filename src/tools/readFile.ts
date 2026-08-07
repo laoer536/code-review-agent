@@ -1,7 +1,7 @@
-import { z } from "zod";
+import { z } from 'zod';
 
 export const readFileSchema = z.object({
-  path: z.string().describe("要读取的文件路径"),
+  path: z.string().describe('要读取的文件路径'),
 });
 
 export async function readFile(input: { path: string }): Promise<string> {

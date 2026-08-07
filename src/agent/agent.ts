@@ -1,10 +1,10 @@
-import { chat } from "../llm/client";
-import { systemPrompt } from "./prompt";
-import { tools, toolDefinitions, validateToolArgs } from "../tools";
-import { getProjectName, getCodeType } from "../memory/memory";
-import { search } from "../rag/vectorStore";
-import { syncGraph } from "../graph/sync";
-import type { ChatCompletionMessageParam } from "./types";
+import { chat } from '../llm/client';
+import { systemPrompt } from './prompt';
+import { tools, toolDefinitions, validateToolArgs } from '../tools';
+import { getProjectName, getCodeType } from '../memory/memory';
+import { search } from '../rag/vectorStore';
+import { syncGraph } from '../graph/sync';
+import type { ChatCompletionMessageParam } from './types';
 
 const MAX_ITERATIONS = 20;
 
@@ -35,9 +35,7 @@ async function buildSystemPrompt(project: string, question: string): Promise<str
   try {
     const results = await search(question, 3);
     if (results.length > 0) {
-      const knowledge = results
-        .map((r) => `- [${r.source}] ${r.text}`)
-        .join("\n");
+      const knowledge = results.map((r) => `- [${r.source}] ${r.text}`).join('\n');
       prompt += `\n\n## 参考知识\n以下是与本次 review 相关的知识库内容，请参考：\n${knowledge}`;
     }
   } catch {
@@ -49,34 +47,34 @@ async function buildSystemPrompt(project: string, question: string): Promise<str
 
 export async function runAgent(question: string): Promise<string> {
   if (!question?.trim()) {
-    return "请提供要审查的内容";
+    return '请提供要审查的内容';
   }
 
   const project = await getProjectName();
 
   // 同步 CodeGraph 索引（首次 init，后续 sync）
-  console.log("📊 同步代码图谱...");
+  console.log('📊 同步代码图谱...');
   const graphResult = await syncGraph(process.cwd());
   console.log(graphResult);
 
   const system = await buildSystemPrompt(project, question);
 
   const messages: ChatCompletionMessageParam[] = [
-    { role: "system", content: system },
-    { role: "user", content: question },
+    { role: 'system', content: system },
+    { role: 'user', content: question },
   ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const response = await chat(messages, toolDefinitions);
 
     if (!response.tool_calls || response.tool_calls.length === 0) {
-      return response.content ?? "";
+      return response.content ?? '';
     }
 
     messages.push(response as ChatCompletionMessageParam);
 
     for (const call of response.tool_calls) {
-      if (call.type !== "function") continue;
+      if (call.type !== 'function') continue;
 
       const name = call.function.name;
       let rawArgs: Record<string, unknown>;
@@ -85,7 +83,7 @@ export async function runAgent(question: string): Promise<string> {
         rawArgs = JSON.parse(call.function.arguments);
       } catch {
         messages.push({
-          role: "tool",
+          role: 'tool',
           tool_call_id: call.id,
           content: `参数解析失败: ${call.function.arguments}`,
         });
@@ -93,7 +91,7 @@ export async function runAgent(question: string): Promise<string> {
       }
 
       // 自动注入 projectPath
-      if (name === "analyzeImpact" || name === "getCallChain") {
+      if (name === 'analyzeImpact' || name === 'getCallChain') {
         rawArgs.projectPath = rawArgs.projectPath || process.cwd();
       }
 
@@ -102,7 +100,7 @@ export async function runAgent(question: string): Promise<string> {
       try {
         const result = await callTool(name, rawArgs);
         messages.push({
-          role: "tool",
+          role: 'tool',
           tool_call_id: call.id,
           content: result,
         });
@@ -110,7 +108,7 @@ export async function runAgent(question: string): Promise<string> {
         const errorMsg = err instanceof Error ? err.message : String(err);
         console.error(`❌ 工具调用失败: ${name}`, errorMsg);
         messages.push({
-          role: "tool",
+          role: 'tool',
           tool_call_id: call.id,
           content: `工具调用出错: ${errorMsg}`,
         });
@@ -118,5 +116,5 @@ export async function runAgent(question: string): Promise<string> {
     }
   }
 
-  return "达到最大迭代次数，停止分析";
+  return '达到最大迭代次数，停止分析';
 }

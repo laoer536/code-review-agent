@@ -1,4 +1,4 @@
-const LANGUAGE = process.env.REVIEW_LANGUAGE || "中文";
+const LANGUAGE = process.env.REVIEW_LANGUAGE || '中文';
 
 export const systemPrompt = `你是一个专业的 Code Review Agent。请使用 ${LANGUAGE} 输出 review 结果。
 

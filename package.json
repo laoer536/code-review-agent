@@ -2,6 +2,10 @@
   "name": "code-review-agent",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "format": "prettier --write 'src/**/*.ts'",
+    "format:check": "prettier --check 'src/**/*.ts'"
+  },
   "devDependencies": {
     "@colbymchenry/codegraph": "^1.5.0",
     "@types/bun": "latest",

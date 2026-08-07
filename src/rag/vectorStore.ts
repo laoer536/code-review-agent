@@ -1,10 +1,10 @@
-import { Database } from "bun:sqlite";
-import { join } from "path";
-import { load } from "sqlite-vec";
-import { embed, embedBatch } from "../llm/embedding";
+import { Database } from 'bun:sqlite';
+import { join } from 'path';
+import { load } from 'sqlite-vec';
+import { embed, embedBatch } from '../llm/embedding';
 
-const AGENT_ROOT = join(import.meta.dir, "../..");
-const DB_FILE = join(AGENT_ROOT, ".code-review-agent", "vectors.db");
+const AGENT_ROOT = join(import.meta.dir, '../..');
+const DB_FILE = join(AGENT_ROOT, '.code-review-agent', 'vectors.db');
 
 let db: Database | null = null;
 
@@ -12,12 +12,12 @@ function getDb(): Database {
   if (db) return db;
 
   // macOS 需要用系统 SQLite（Bun 内置的不支持扩展加载）
-  if (process.platform === "darwin") {
+  if (process.platform === 'darwin') {
     try {
-      Database.setCustomSQLite("/opt/homebrew/opt/sqlite3/lib/libsqlite3.dylib");
+      Database.setCustomSQLite('/opt/homebrew/opt/sqlite3/lib/libsqlite3.dylib');
     } catch {
       // fallback: 尝试 Homebrew x86 路径
-      Database.setCustomSQLite("/usr/local/opt/sqlite3/lib/libsqlite3.dylib");
+      Database.setCustomSQLite('/usr/local/opt/sqlite3/lib/libsqlite3.dylib');
     }
   }
 
@@ -50,13 +50,13 @@ function chunkText(text: string, maxChars = 1000): string[] {
   const chunks: string[] = [];
   const paragraphs = text.split(/\n{2,}/);
 
-  let current = "";
+  let current = '';
   for (const p of paragraphs) {
     if (current.length + p.length > maxChars && current.length > 0) {
       chunks.push(current.trim());
-      current = "";
+      current = '';
     }
-    current += p + "\n\n";
+    current += p + '\n\n';
   }
   if (current.trim()) chunks.push(current.trim());
 
@@ -72,10 +72,10 @@ export async function indexDocument(text: string, source: string): Promise<numbe
   if (chunks.length === 0) return 0;
 
   // 删除同 source 的旧数据
-  const oldIds = d.prepare("SELECT id FROM documents WHERE source = ?").all(source) as Array<{ id: number }>;
+  const oldIds = d.prepare('SELECT id FROM documents WHERE source = ?').all(source) as Array<{ id: number }>;
   if (oldIds.length > 0) {
-    d.prepare("DELETE FROM documents WHERE source = ?").run(source);
-    const delStmt = d.prepare("DELETE FROM vec_documents WHERE id = ?");
+    d.prepare('DELETE FROM documents WHERE source = ?').run(source);
+    const delStmt = d.prepare('DELETE FROM vec_documents WHERE id = ?');
     for (const row of oldIds) {
       delStmt.run(String(row.id));
     }
@@ -85,8 +85,8 @@ export async function indexDocument(text: string, source: string): Promise<numbe
   const vectors = await embedBatch(chunks);
 
   // 插入
-  const insertDoc = d.prepare("INSERT INTO documents (text, source, chunk_index) VALUES (?, ?, ?)");
-  const insertVec = d.prepare("INSERT INTO vec_documents (id, embedding) VALUES (?, ?)");
+  const insertDoc = d.prepare('INSERT INTO documents (text, source, chunk_index) VALUES (?, ?, ?)');
+  const insertVec = d.prepare('INSERT INTO vec_documents (id, embedding) VALUES (?, ?)');
 
   for (let i = 0; i < chunks.length; i++) {
     const { lastInsertRowid } = insertDoc.run(chunks[i]!, source, i);
@@ -99,13 +99,10 @@ export async function indexDocument(text: string, source: string): Promise<numbe
 /**
  * 语义搜索
  */
-export async function search(
-  query: string,
-  topK = 3,
-): Promise<Array<{ text: string; source: string; score: number }>> {
+export async function search(query: string, topK = 3): Promise<Array<{ text: string; source: string; score: number }>> {
   const d = getDb();
 
-  const count = (d.prepare("SELECT count(*) as c FROM documents").get() as { c: number }).c;
+  const count = (d.prepare('SELECT count(*) as c FROM documents').get() as { c: number }).c;
   if (count === 0) return [];
 
   const queryVec = await embed(query);
@@ -131,7 +128,7 @@ export async function search(
  */
 export async function listSources(): Promise<string[]> {
   const d = getDb();
-  const rows = d.prepare("SELECT DISTINCT source FROM documents").all() as Array<{ source: string }>;
+  const rows = d.prepare('SELECT DISTINCT source FROM documents').all() as Array<{ source: string }>;
   return rows.map((r) => r.source);
 }
 
@@ -140,11 +137,11 @@ export async function listSources(): Promise<string[]> {
  */
 export async function removeSource(source: string): Promise<number> {
   const d = getDb();
-  const ids = d.prepare("SELECT id FROM documents WHERE source = ?").all(source) as Array<{ id: number }>;
+  const ids = d.prepare('SELECT id FROM documents WHERE source = ?').all(source) as Array<{ id: number }>;
   if (ids.length === 0) return 0;
 
-  d.prepare("DELETE FROM documents WHERE source = ?").run(source);
-  const delStmt = d.prepare("DELETE FROM vec_documents WHERE id = ?");
+  d.prepare('DELETE FROM documents WHERE source = ?').run(source);
+  const delStmt = d.prepare('DELETE FROM vec_documents WHERE id = ?');
   for (const row of ids) {
     delStmt.run(String(row.id));
   }

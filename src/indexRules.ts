@@ -1,5 +1,5 @@
-import { Glob } from "bun";
-import { indexDocument, listSources, removeSource } from "./rag/vectorStore";
+import { Glob } from 'bun';
+import { indexDocument, listSources, removeSource } from './rag/vectorStore';
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -29,13 +29,13 @@ async function indexFile(filePath: string): Promise<void> {
     return;
   }
   const text = await file.text();
-  const name = filePath.split("/").pop()!;
+  const name = filePath.split('/').pop()!;
   const count = await indexDocument(text, name);
   console.log(`✅ 索引 ${name} → ${count} 个分块`);
 }
 
 async function indexDir(dirPath: string): Promise<void> {
-  const glob = new Glob("**/*.{md,txt,json,yaml,yml}");
+  const glob = new Glob('**/*.{md,txt,json,yaml,yml}');
   let total = 0;
 
   for await (const file of glob.scan({ cwd: dirPath, onlyFiles: true })) {
@@ -50,17 +50,17 @@ async function indexDir(dirPath: string): Promise<void> {
 }
 
 // 首次加载 embedding 模型
-console.log("⏳ 加载 embedding 模型...\n");
+console.log('⏳ 加载 embedding 模型...\n');
 
 switch (command) {
-  case "index": {
+  case 'index': {
     if (!target) {
-      console.error("❌ 请指定文件或目录路径");
+      console.error('❌ 请指定文件或目录路径');
       process.exit(1);
     }
     // 判断是文件还是目录
     try {
-      const stat = await import("fs/promises").then(fs => fs.stat(target));
+      const stat = await import('fs/promises').then((fs) => fs.stat(target));
       if (stat.isDirectory()) {
         await indexDir(target);
       } else {
@@ -72,10 +72,10 @@ switch (command) {
     }
     break;
   }
-  case "list": {
+  case 'list': {
     const sources = await listSources();
     if (sources.length === 0) {
-      console.log("📭 知识库为空");
+      console.log('📭 知识库为空');
     } else {
       console.log(`📚 已索引 ${sources.length} 个来源:`);
       for (const s of sources) {
@@ -84,16 +84,16 @@ switch (command) {
     }
     break;
   }
-  case "remove": {
+  case 'remove': {
     if (!target) {
-      console.error("❌ 请指定要删除的来源");
+      console.error('❌ 请指定要删除的来源');
       process.exit(1);
     }
     const count = await removeSource(target);
     console.log(`🗑️  已删除 ${count} 条记录`);
     break;
   }
-  case "clear": {
+  case 'clear': {
     const sources = await listSources();
     for (const s of sources) {
       await removeSource(s);

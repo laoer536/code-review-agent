@@ -1,9 +1,9 @@
-import { join } from "path";
+import { join } from 'path';
 
 // 存到 agent 项目自身目录下，不是用户的 cwd
-const AGENT_ROOT = join(import.meta.dir, "../..");
-const MEMORY_DIR = join(AGENT_ROOT, ".code-review-agent");
-const MEMORY_FILE = join(MEMORY_DIR, "memory.json");
+const AGENT_ROOT = join(import.meta.dir, '../..');
+const MEMORY_DIR = join(AGENT_ROOT, '.code-review-agent');
+const MEMORY_FILE = join(MEMORY_DIR, 'memory.json');
 
 interface ProjectMemory {
   codeType: string;
@@ -36,7 +36,7 @@ export async function getProjectName(): Promise<string> {
   } catch {}
 
   // fallback: 当前目录名
-  return process.cwd().split("/").pop() ?? "unknown";
+  return process.cwd().split('/').pop() ?? 'unknown';
 }
 
 /** 获取项目的技术栈记忆 */
