@@ -323,12 +323,11 @@ Powered by [CodeGraph](https://github.com/colbymchenry/codegraph), the agent can
 | `analyzeImpact` | What code is affected by changing a function/variable |
 | `getCallChain` | Who calls a function (callers) / what it calls (callees) |
 
-### Setup
+### How It Works
 
-```bash
-# Initialize code graph index (run once, or after major changes)
-npx codegraph init .
-```
+- **Auto-sync**: Agent automatically runs `codegraph sync` (or `init` on first run) at startup
+- **Persistent**: `.codegraph/` index is stored in the target project, survives across reviews
+- **CI-friendly**: Agent runs from the target project directory, `process.cwd()` is used automatically
 
 ### Example
 
@@ -348,7 +347,7 @@ src/agent/agent.ts
   function    buildSystemPrompt:24
 ```
 
-The agent automatically uses these tools during review to identify impact scope.
+The agent automatically uses these tools during review to identify impact scope and call chains.
 
 ## Tech Stack
 

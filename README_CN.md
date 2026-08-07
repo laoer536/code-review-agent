@@ -96,6 +96,8 @@ src/
 │   └── vectorStore.ts        # 向量存储（SQLite + sqlite-vec）
 ├── memory/
 │   └── memory.ts             # 项目技术栈记忆（JSON 文件）
+├── graph/
+│   └── sync.ts               # CodeGraph 图谱同步（init/sync）
 └── tools/
     ├── index.ts              # 工具注册 + zod 参数校验
     ├── listFiles.ts          # 查看文件列表
@@ -103,7 +105,9 @@ src/
     ├── gitDiff.ts            # 查看 git diff
     ├── saveReview.ts         # 保存技术栈记忆
     ├── indexDocument.ts      # 索引文档到知识库
-    └── searchKnowledge.ts    # 语义搜索知识库
+    ├── searchKnowledge.ts    # 语义搜索知识库
+    ├── analyzeImpact.ts      # 影响范围分析
+    └── getCallChain.ts       # 调用链分析
 
 rules/                        # 示例规则文件（用户可自定义）
 ├── general.md                # 通用规范
@@ -309,6 +313,42 @@ console.log("⏳ 加载 embedding 模型...\n");
 | 🟡 建议修复 | 2 |
 | 🟢 可选优化 | 2 |
 
+## 代码图谱（影响分析）
+
+基于 [CodeGraph](https://github.com/colbymchenry/codegraph)，支持跨文件影响分析和调用链分析。
+
+### 能力
+
+| 工具 | 说明 |
+|------|------|
+| `analyzeImpact` | 修改某个函数/变量会影响哪些代码 |
+| `getCallChain` | 函数调用链（谁调用了它 / 它调用了谁） |
+
+### 工作方式
+
+- **自动同步**：Agent 启动时自动运行 `codegraph sync`（首次 `init`）
+- **按项目持久化**：`.codegraph/` 索引存在目标项目下，跨 review 保留
+- **CI 友好**：Agent 在目标项目目录运行，自动用 `process.cwd()` 定位项目
+
+### 示例
+
+```
+$ npx codegraph impact embed
+
+Impact of changing "embed" — 7 affected symbols:
+
+src/llm/embedding.ts
+  function    embed:23
+
+src/rag/vectorStore.ts
+  function    search:102
+
+src/agent/agent.ts
+  function    buildSystemPrompt:24
+```
+
+Agent review 时自动调用这些工具分析影响范围和调用链。
+
 ## 审查维度
 
 | 优先级 | 维度 | 示例 |
@@ -323,4 +363,5 @@ console.log("⏳ 加载 embedding 模型...\n");
 - **LLM**: DeepSeek API（通过 OpenAI SDK）
 - **Embedding**: `@huggingface/transformers`（本地模型）
 - **向量存储**: SQLite + sqlite-vec
+- **代码图谱**: CodeGraph（依赖分析 + 影响分析）
 - **参数校验**: zod
