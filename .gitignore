@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # agent memory
 .code-review-agent/
+
+# code graph index
+.codegraph/

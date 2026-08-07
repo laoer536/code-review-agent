@@ -312,10 +312,49 @@ Function name suggests batch processing but runs sequentially.
 | 🟡 Suggested | Performance, Error handling | N+1 queries, missing try-catch |
 | 🟢 Optional | Readability, Maintainability | Complex logic refactoring, dead code |
 
+## Code Graph (Impact Analysis)
+
+Powered by [CodeGraph](https://github.com/colbymchenry/codegraph), the agent can analyze cross-file impact and call chains.
+
+### Capabilities
+
+| Tool | Description |
+|------|-------------|
+| `analyzeImpact` | What code is affected by changing a function/variable |
+| `getCallChain` | Who calls a function (callers) / what it calls (callees) |
+
+### Setup
+
+```bash
+# Initialize code graph index (run once, or after major changes)
+npx codegraph init .
+```
+
+### Example
+
+```
+$ npx codegraph impact embed
+
+Impact of changing "embed" — 7 affected symbols:
+
+src/llm/embedding.ts
+  function    embed:23
+
+src/rag/vectorStore.ts
+  function    search:102
+  file        vectorStore.ts:1
+
+src/agent/agent.ts
+  function    buildSystemPrompt:24
+```
+
+The agent automatically uses these tools during review to identify impact scope.
+
 ## Tech Stack
 
 - **Runtime**: Bun
 - **LLM**: DeepSeek API (via OpenAI SDK)
 - **Embedding**: `@huggingface/transformers` (local model)
 - **Vector Store**: SQLite + sqlite-vec
+- **Code Graph**: CodeGraph (dependency analysis + impact analysis)
 - **Validation**: zod

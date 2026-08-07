@@ -3,6 +3,7 @@ import { systemPrompt } from "./prompt";
 import { tools, toolDefinitions, validateToolArgs } from "../tools";
 import { getProjectName, getCodeType } from "../memory/memory";
 import { search } from "../rag/vectorStore";
+import { syncGraph } from "../graph/sync";
 import type { ChatCompletionMessageParam } from "./types";
 
 const MAX_ITERATIONS = 20;
@@ -52,6 +53,12 @@ export async function runAgent(question: string): Promise<string> {
   }
 
   const project = await getProjectName();
+
+  // 同步 CodeGraph 索引（首次 init，后续 sync）
+  console.log("📊 同步代码图谱...");
+  const graphResult = await syncGraph(process.cwd());
+  console.log(graphResult);
+
   const system = await buildSystemPrompt(project, question);
 
   const messages: ChatCompletionMessageParam[] = [
@@ -83,6 +90,11 @@ export async function runAgent(question: string): Promise<string> {
           content: `参数解析失败: ${call.function.arguments}`,
         });
         continue;
+      }
+
+      // 自动注入 projectPath
+      if (name === "analyzeImpact" || name === "getCallChain") {
+        rawArgs.projectPath = rawArgs.projectPath || process.cwd();
       }
 
       console.log(`🔧 [${i + 1}/${MAX_ITERATIONS}] 调用工具: ${name}`, rawArgs);
