@@ -1,55 +1,57 @@
 /**
- * CLI 打包脚本
- * bun run build.ts [--target=bun-linux-x64] [--outfile=dist/code-review]
+ * CLI 打包脚本 — 源码包
+ * bun run build.ts [--outfile=dist/code-review-agent]
  */
 import { parseArgs } from 'util';
-import { cpSync, mkdirSync, existsSync } from 'fs';
+import { cpSync, mkdirSync, existsSync, writeFileSync, chmodSync } from 'fs';
 import { join } from 'path';
 
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
-    target: { type: 'string', default: `bun-${process.platform}-${process.arch === 'arm64' ? 'arm64' : 'x64'}` },
-    outfile: { type: 'string', default: 'dist/code-review' },
+    outfile: { type: 'string', default: 'dist/code-review-agent' },
   },
 });
 
-const target = values.target!;
 const outfile = values.outfile!;
-const outDir = join(outfile, '..');
 
-console.log(`🔨 打包 CLI → ${outfile} (${target})`);
+console.log(`🔨 打包 CLI → ${outfile}`);
 
-// 1. 编译 binary
-const result = await Bun.build({
-  entrypoints: ['src/index.ts'],
-  outdir: outDir,
-  target: 'bun',
-  compile: {
-    target: target as any,
-    outfile: outfile,
-  },
-});
+if (!existsSync(outfile)) {
+  mkdirSync(outfile, { recursive: true });
+}
 
-if (!result.success) {
-  console.error('❌ 编译失败:');
-  for (const log of result.logs) {
-    console.error(log);
+// 1. 复制源码 + 规则 + 配置
+const files = ['src', 'rules', 'package.json', 'bun.lock'];
+for (const file of files) {
+  const src = join(import.meta.dir, file);
+  if (existsSync(src)) {
+    cpSync(src, join(outfile, file), { recursive: true });
+    console.log(`📋 ${file}`);
   }
-  process.exit(1);
 }
 
-// 2. 复制内置规则到 binary 旁边
-const rulesSrc = join(import.meta.dir, 'rules');
-const rulesDest = join(outDir, 'rules');
-if (existsSync(rulesSrc)) {
-  cpSync(rulesSrc, rulesDest, { recursive: true });
-  console.log(`📋 内置规则 → ${rulesDest}`);
-}
+// 2. 创建启动脚本
+const wrapper = `#!/bin/sh
+DIR="$(cd "$(dirname "$0")" && pwd)"
+CALLER_DIR="$(pwd)"
 
-console.log(`✅ 打包完成: ${outfile}`);
+# 首次运行自动安装依赖
+if [ ! -d "\${DIR}/node_modules" ]; then
+  echo "📦 首次运行，安装依赖..."
+  (cd "\${DIR}" && bun install)
+fi
+
+# 在调用者目录运行 review
+cd "\${CALLER_DIR}"
+exec bun run "\${DIR}/src/index.ts" "$@"
+`;
+const wrapperPath = join(outfile, 'run.sh');
+writeFileSync(wrapperPath, wrapper);
+chmodSync(wrapperPath, 0o755);
+console.log(`🚀 启动脚本 → ${wrapperPath}`);
+
+console.log(`\n✅ 打包完成: ${outfile}`);
 console.log(`\n使用方式:`);
-console.log(`  # 直接运行`);
-console.log(`  ${outfile}`);
-console.log(`\n  # CI 中使用`);
-console.log(`  AGENT_ROOT=${outDir} ${outfile}`);
+console.log(`  ${outfile}/run.sh                          # 自动 review MR 变更`);
+console.log(`  ${outfile}/run.sh "审查 src/auth.ts"        # 自定义 review`);

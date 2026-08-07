@@ -8,19 +8,8 @@ permissions:
   contents: write
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            name: code-review-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            name: code-review-darwin-arm64
-
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
+  release:
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -29,29 +18,13 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Build CLI binary
-        id: build
-        run: |
-          bun run build.ts --target=${{ matrix.target }} --outfile=dist/${{ matrix.name }}
-          echo "binary=true" >> $GITHUB_OUTPUT
-        continue-on-error: true
+      - name: Package CLI
+        run: bun run build.ts --outfile=dist/code-review-agent
 
-      - name: Fallback — source package
-        if: steps.build.outcome == 'failure'
-        run: |
-          mkdir -p dist/${{ matrix.name }}-src
-          cp -r src rules package.json bun.lock dist/${{ matrix.name }}-src/
-          tar -czf dist/${{ matrix.name }}-src.tar.gz -C dist ${{ matrix.name }}-src
-          echo "source=true" >> $GITHUB_OUTPUT
+      - name: Create tarball
+        run: tar -czf dist/code-review-agent-linux-x64.tar.gz -C dist code-review-agent
 
-      - name: Upload binary
-        if: steps.build.outputs.binary == 'true'
+      - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.name }}
-
-      - name: Upload source package
-        if: steps.build.outputs.source == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.name }}-src.tar.gz
+          files: dist/code-review-agent-linux-x64.tar.gz
