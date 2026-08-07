@@ -34,22 +34,26 @@ async function indexRulesDir(dirPath: string, prefix: string): Promise<{ count: 
  * 2. 用户项目规则（.code-review/rules/ 或 RULES_DIR 环境变量）
  */
 export async function syncRules(projectPath: string): Promise<string> {
-  const results: string[] = [];
+  try {
+    const results: string[] = [];
 
-  // 内置规则
-  const builtin = await indexRulesDir(BUILTIN_RULES_DIR, 'builtin');
-  if (builtin.count > 0) {
-    results.push(`内置规则: ${builtin.count} 个文件, ${builtin.total} 个分块`);
+    // 内置规则
+    const builtin = await indexRulesDir(BUILTIN_RULES_DIR, 'builtin');
+    if (builtin.count > 0) {
+      results.push(`内置规则: ${builtin.count} 个文件, ${builtin.total} 个分块`);
+    }
+
+    // 用户项目规则
+    const userRulesDir = join(projectPath, process.env.RULES_DIR || '.code-review/rules');
+    const user = await indexRulesDir(userRulesDir, '');
+    if (user.count > 0) {
+      results.push(`项目规则: ${user.count} 个文件, ${user.total} 个分块`);
+    } else {
+      results.push(`未找到项目规则 (${userRulesDir})，仅使用内置规则`);
+    }
+
+    return results.join(' | ');
+  } catch (err) {
+    return `规则索引失败: ${err instanceof Error ? err.message : String(err)}`;
   }
-
-  // 用户项目规则
-  const userRulesDir = join(projectPath, process.env.RULES_DIR || '.code-review/rules');
-  const user = await indexRulesDir(userRulesDir, '');
-  if (user.count > 0) {
-    results.push(`项目规则: ${user.count} 个文件, ${user.total} 个分块`);
-  } else {
-    results.push(`未找到项目规则 (${userRulesDir})，仅使用内置规则`);
-  }
-
-  return results.join(' | ');
 }

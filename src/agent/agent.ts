@@ -4,7 +4,7 @@ import { tools, toolDefinitions, validateToolArgs } from '../tools';
 import { getProjectName, getCodeType } from '../memory/memory';
 import { search } from '../rag/vectorStore';
 import { syncGraph } from '../graph/sync';
-import { syncRules } from '../graph/syncRules';
+import { syncRules } from '../rag/syncRules';
 import type { ChatCompletionMessageParam } from './types';
 
 const MAX_ITERATIONS = 20;
@@ -23,13 +23,27 @@ function callTool(name: string, args: Record<string, unknown>): Promise<string> 
   return (toolFn as (input: typeof validated) => Promise<string>)(validated);
 }
 
-async function buildSystemPrompt(project: string, question: string): Promise<string> {
+async function buildSystemPrompt(
+  project: string,
+  question: string,
+  context: { graphStatus?: string; rulesStatus?: string },
+): Promise<string> {
   let prompt = systemPrompt;
 
   // 注入技术栈记忆
   const codeType = await getCodeType(project);
   if (codeType) {
     prompt += `\n\n## 项目记忆\n当前项目 [${project}] 的技术栈：${codeType}。请用该技术栈的最佳实践和常见问题来审查。`;
+  }
+
+  // 注入代码图谱状态
+  if (context.graphStatus) {
+    prompt += `\n\n## 代码图谱\n${context.graphStatus}\n代码图谱已就绪，你可以使用 analyzeImpact 分析修改的影响范围，使用 getCallChain 查看函数调用链。`;
+  }
+
+  // 注入可用规则
+  if (context.rulesStatus) {
+    prompt += `\n\n## 可用规则\n${context.rulesStatus}\n规则已索引，你可以用 searchKnowledge 搜索相关规则作为审查参考。`;
   }
 
   // RAG：检索相关知识
@@ -54,16 +68,26 @@ export async function runAgent(question: string): Promise<string> {
   const project = await getProjectName();
 
   // 同步 CodeGraph 索引（首次 init，后续 sync）
+  let graphStatus: string | undefined;
   console.log('📊 同步代码图谱...');
-  const graphResult = await syncGraph(process.cwd());
-  console.log(graphResult);
+  try {
+    graphStatus = await syncGraph(process.cwd());
+    console.log(graphStatus);
+  } catch (err) {
+    console.warn('⚠️ CodeGraph 同步失败，跳过图谱功能:', err);
+  }
 
   // 索引目标项目的规则文件
+  let rulesStatus: string | undefined;
   console.log('📚 索引规则...');
-  const rulesResult = await syncRules(process.cwd());
-  console.log(rulesResult);
+  try {
+    rulesStatus = await syncRules(process.cwd());
+    console.log(rulesStatus);
+  } catch (err) {
+    console.warn('⚠️ 规则索引失败，跳过规则功能:', err);
+  }
 
-  const system = await buildSystemPrompt(project, question);
+  const system = await buildSystemPrompt(project, question, { graphStatus, rulesStatus });
 
   const messages: ChatCompletionMessageParam[] = [
     { role: 'system', content: system },
