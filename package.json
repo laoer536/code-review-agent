@@ -1,0 +1,19 @@
+{
+  "name": "code-review-agent",
+  "module": "src/index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "^3.9.6"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "openai": "^7.4.0",
+    "sqlite-vec": "^0.1.9",
+    "sqlite-vec-darwin-arm64": "^0.1.9",
+    "zod": "^4.4.3"
+  }
+}
