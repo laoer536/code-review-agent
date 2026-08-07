@@ -7,25 +7,30 @@ An AI-powered code review agent that supports automatic change analysis, semanti
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Agent Loop                        │
-│                                                      │
-│  User Query → Build Prompt → LLM Reasoning → Tools   │
-│                ↑                              │      │
-│                └──────── Multi-turn Loop ─────┘      │
-│                                                      │
-│  Tools:                                              │
-│    listFiles        Browse project file structure     │
-│    readFile         Read file content                 │
-│    gitDiff          View git changes                  │
-│    saveReview       Remember project tech stack       │
-│    indexDocument    Index rules into knowledge base   │
-│    searchKnowledge  Semantic search knowledge base    │
-│                                                      │
-│  Memory:                                             │
-│    memory           Project tech stack (JSON)         │
-│    RAG              Rule knowledge base (SQLite+vec)  │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                       Agent Loop                          │
+│                                                           │
+│  User Query → Build Prompt → LLM Reasoning → Tools        │
+│                ↑                              │           │
+│                └──────── Multi-turn Loop ─────┘           │
+│                                                           │
+│  Tools:                                                   │
+│    listFiles         Browse project file structure         │
+│    readFile          Read file content                     │
+│    gitDiff           View git changes                      │
+│    saveReview        Remember project tech stack            │
+│    indexDocument     Index rules into knowledge base       │
+│    searchKnowledge   Semantic search knowledge base        │
+│    analyzeImpact     Impact analysis (CodeGraph)           │
+│    getCallChain      Call chain analysis (CodeGraph)       │
+│                                                           │
+│  Data (.code-review-agent/):                              │
+│    memory.json       Project tech stack memory (JSON)      │
+│    vectors.db        RAG knowledge base (SQLite + vec)     │
+│                                                           │
+│  Code Index (.codegraph/):                                │
+│    CodeGraph         Dependency & impact analysis index    │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Quick Start
@@ -249,6 +254,7 @@ code-review:
   cache:
     key: code-review-agent
     paths:
+      - .code-review-agent/          # RAG vectors.db + memory.json
       - .codegraph/                  # CodeGraph index (persistent)
       - .cache/huggingface/          # Embedding model (cached)
   before_script:
@@ -326,7 +332,10 @@ src/
 │   ├── client.ts             # LLM chat client (DeepSeek API)
 │   └── embedding.ts          # Embedding client (local model all-MiniLM-L6-v2)
 ├── rag/
-│   └── vectorStore.ts        # Vector store (SQLite + sqlite-vec)
+│   ├── vectorStore.ts        # Vector store (SQLite + sqlite-vec)
+│   └── syncRules.ts          # Auto-index rules (built-in + project rules)
+├── graph/
+│   └── sync.ts               # CodeGraph sync (init/sync)
 ├── memory/
 │   └── memory.ts             # Project tech stack memory (JSON file)
 └── tools/
@@ -336,12 +345,20 @@ src/
     ├── gitDiff.ts            # View git diff
     ├── saveReview.ts         # Save tech stack memory
     ├── indexDocument.ts      # Index document to knowledge base
-    └── searchKnowledge.ts    # Semantic search knowledge base
+    ├── searchKnowledge.ts    # Semantic search knowledge base
+    ├── analyzeImpact.ts      # Impact analysis (CodeGraph)
+    └── getCallChain.ts       # Call chain analysis (CodeGraph)
 
 rules/                        # Example rule files (customizable)
 ├── general.md                # General standards
 ├── typescript.md             # TypeScript standards
 └── security.md               # Security standards
+
+.code-review-agent/           # Runtime data (gitignored, cache in CI)
+├── vectors.db                # RAG knowledge base (SQLite + vec)
+└── memory.json               # Project tech stack memory
+
+.codegraph/                   # CodeGraph index (gitignored, cache in CI)
 ```
 
 ## Core Modules
@@ -379,6 +396,20 @@ Vectorized rule storage with semantic retrieval:
 - **Chunking**: Paragraph-based, max 1000 chars per chunk
 
 Agent automatically searches the knowledge base at startup and injects relevant rules into the system prompt.
+
+### Data Persistence
+
+Runtime data is stored in `.code-review-agent/` (gitignored):
+
+```
+.code-review-agent/
+├── vectors.db      # RAG vector knowledge base (SQLite with embedding vectors)
+└── memory.json     # Project tech stack memory (per-project JSON)
+```
+
+- **First run**: auto-creates directory, initializes DB, downloads embedding model
+- **Subsequent runs**: incrementally updates rule index, reuses existing data
+- **CI caching**: always cache this directory in CI to avoid re-indexing rules and re-downloading the model
 
 ### Tool System
 

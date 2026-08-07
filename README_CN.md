@@ -7,25 +7,30 @@
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                    Agent Loop                        │
-│                                                      │
-│  用户提问 → 构建 Prompt → LLM 推理 → 工具调用 → 结果   │
-│                ↑                              │      │
-│                └──────── 多轮循环 ─────────────┘      │
-│                                                      │
-│  工具:                                               │
-│    listFiles      查看项目文件结构                     │
-│    readFile       读取文件内容                        │
-│    gitDiff        查看 git 代码变更                   │
-│    saveReview     记住项目技术栈                      │
-│    indexDocument  索引规则到知识库                     │
-│    searchKnowledge 语义搜索知识库                     │
-│                                                      │
-│  记忆:                                               │
-│    memory         项目技术栈记忆（JSON）               │
-│    RAG            规则知识库（SQLite + 向量检索）       │
-└─────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                       Agent Loop                          │
+│                                                           │
+│  用户提问 → 构建 Prompt → LLM 推理 → 工具调用 → 结果      │
+│                ↑                              │           │
+│                └──────── 多轮循环 ─────────────┘           │
+│                                                           │
+│  工具:                                                    │
+│    listFiles         查看项目文件结构                       │
+│    readFile          读取文件内容                           │
+│    gitDiff           查看 git 代码变更                     │
+│    saveReview        记住项目技术栈                         │
+│    indexDocument     索引规则到知识库                       │
+│    searchKnowledge   语义搜索知识库                         │
+│    analyzeImpact     影响范围分析（CodeGraph）              │
+│    getCallChain      调用链分析（CodeGraph）                │
+│                                                           │
+│  数据 (.code-review-agent/):                              │
+│    memory.json       项目技术栈记忆（JSON）                 │
+│    vectors.db        RAG 知识库（SQLite + 向量检索）        │
+│                                                           │
+│  代码索引 (.codegraph/):                                  │
+│    CodeGraph         依赖分析 + 影响分析索引                │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## 快速开始
@@ -248,6 +253,7 @@ code-review:
   cache:
     key: code-review-agent
     paths:
+      - .code-review-agent/          # RAG vectors.db + memory.json
       - .codegraph/                  # CodeGraph 索引（持久化）
       - .cache/huggingface/          # Embedding 模型（缓存）
   before_script:
@@ -325,11 +331,12 @@ src/
 │   ├── client.ts             # LLM 对话客户端（DeepSeek API）
 │   └── embedding.ts          # Embedding 客户端（本地模型 all-MiniLM-L6-v2）
 ├── rag/
-│   └── vectorStore.ts        # 向量存储（SQLite + sqlite-vec）
-├── memory/
-│   └── memory.ts             # 项目技术栈记忆（JSON 文件）
+│   ├── vectorStore.ts        # 向量存储（SQLite + sqlite-vec）
+│   └── syncRules.ts          # 自动索引规则（内置 + 项目规则）
 ├── graph/
 │   └── sync.ts               # CodeGraph 图谱同步（init/sync）
+├── memory/
+│   └── memory.ts             # 项目技术栈记忆（JSON 文件）
 └── tools/
     ├── index.ts              # 工具注册 + zod 参数校验
     ├── listFiles.ts          # 查看文件列表
@@ -338,13 +345,19 @@ src/
     ├── saveReview.ts         # 保存技术栈记忆
     ├── indexDocument.ts      # 索引文档到知识库
     ├── searchKnowledge.ts    # 语义搜索知识库
-    ├── analyzeImpact.ts      # 影响范围分析
-    └── getCallChain.ts       # 调用链分析
+    ├── analyzeImpact.ts      # 影响范围分析（CodeGraph）
+    └── getCallChain.ts       # 调用链分析（CodeGraph）
 
 rules/                        # 示例规则文件（用户可自定义）
 ├── general.md                # 通用规范
 ├── typescript.md             # TypeScript 规范
 └── security.md               # 安全规范
+
+.code-review-agent/           # 运行时数据（已 gitignore，CI 中需缓存）
+├── vectors.db                # RAG 知识库（SQLite + 向量索引）
+└── memory.json               # 项目技术栈记忆
+
+.codegraph/                   # CodeGraph 索引（已 gitignore，CI 中需缓存）
 ```
 
 ## 核心模块
@@ -383,6 +396,20 @@ rules/                        # 示例规则文件（用户可自定义）
 - **分块**: 按段落分块，每块不超过 1000 字符
 
 Agent 启动时自动用用户问题搜索知识库，将相关规则注入 system prompt。
+
+### 数据持久化
+
+Agent 的运行时数据存储在 `.code-review-agent/` 目录下（已 gitignore）：
+
+```
+.code-review-agent/
+├── vectors.db      # RAG 向量知识库（SQLite，包含规则的 embedding 向量）
+└── memory.json     # 项目技术栈记忆（按项目名隔离的 JSON）
+```
+
+- **首次运行**：自动创建目录、初始化数据库、下载 embedding 模型
+- **后续运行**：增量更新规则索引，复用已有数据
+- **CI 缓存**：务必在 CI 中缓存此目录，避免每次重新索引规则和下载模型
 
 ### 工具系统
 
