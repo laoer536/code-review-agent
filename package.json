@@ -1,7 +1,11 @@
 {
   "name": "code-review-agent",
+  "version": "0.1.0",
   "module": "src/index.ts",
   "type": "module",
+  "bin": {
+    "code-review": "./src/index.ts"
+  },
   "scripts": {
     "format": "prettier --write 'src/**/*.ts'",
     "format:check": "prettier --check 'src/**/*.ts'"

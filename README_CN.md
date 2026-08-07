@@ -91,53 +91,20 @@ bun run src/index.ts "检查 src/agent/ 目录的代码质量"
 #### 方式一：本地打包
 
 ```bash
-# 打包当前平台
-bun build src/index.ts --compile --outfile dist/code-review
-
-# 打包 Linux CI 用
-bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/code-review-linux-x64
-
-# 打包 macOS
-bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/code-review-darwin-arm64
+# 打包源码包（src + rules + package.json）
+mkdir -p dist/code-review-agent
+cp -r src rules package.json bun.lock dist/code-review-agent/
+tar -czf dist/code-review-agent.tar.gz -C dist code-review-agent
 ```
 
 #### 方式二：发布到 GitHub Releases
 
-创建 `.github/workflows/release.yml`：
+push tag 自动触发 `.github/workflows/release.yml`：
 
-```yaml
-name: Release CLI
-on:
-  push:
-    tags: ['v*']
-
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            name: code-review-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            name: code-review-darwin-arm64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.name }}
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.name }}
-```
-
-然后：
 ```bash
-git tag v1.0.0
+git tag v0.1.0
 git push --tags
-# 二进制文件自动发布到 GitHub Releases
+# 源码包自动发布到 GitHub Releases
 ```
 
 #### 方式三：发布到私有 npm 仓库
@@ -258,11 +225,11 @@ code-review:
       - .cache/huggingface/          # Embedding 模型（缓存）
   before_script:
     - apt-get update && apt-get install -y curl git
-    # 下载 CLI 到缓存目录
-    - curl -L -o .code-review-cli https://github.com/your-org/code-review-agent/releases/latest/download/code-review-linux-x64
-    - chmod +x .code-review-cli
+    # 下载 CLI 包（源码 + 内置规则）
+    - curl -L https://github.com/your-org/code-review-agent/releases/latest/download/code-review-agent-linux-x64.tar.gz | tar xz
+    - cd code-review-agent && bun install && cd ..
   script:
-    - ./.code-review-cli             # 自动检测 MR 变更
+    - bun run code-review-agent/src/index.ts    # 自动检测 MR 变更
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 ```

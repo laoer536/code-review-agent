@@ -92,53 +92,20 @@ Without arguments, the priority is:
 #### Option 1: Build Locally
 
 ```bash
-# Build for current platform
-bun build src/index.ts --compile --outfile dist/code-review
-
-# Build for Linux CI
-bun build src/index.ts --compile --target=bun-linux-x64 --outfile dist/code-review-linux-x64
-
-# Build for macOS
-bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile dist/code-review-darwin-arm64
+# Package source (src + rules + package.json)
+mkdir -p dist/code-review-agent
+cp -r src rules package.json bun.lock dist/code-review-agent/
+tar -czf dist/code-review-agent.tar.gz -C dist code-review-agent
 ```
 
 #### Option 2: Publish to GitHub Releases
 
-Create `.github/workflows/release.yml`:
+Push tag to trigger `.github/workflows/release.yml`:
 
-```yaml
-name: Release CLI
-on:
-  push:
-    tags: ['v*']
-
-jobs:
-  build:
-    strategy:
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: bun-linux-x64
-            name: code-review-linux-x64
-          - os: macos-latest
-            target: bun-darwin-arm64
-            name: code-review-darwin-arm64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bun build src/index.ts --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.name }}
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: dist/${{ matrix.name }}
-```
-
-Then:
 ```bash
-git tag v1.0.0
+git tag v0.1.0
 git push --tags
-# Binary auto-published to GitHub Releases
+# Source package auto-published to GitHub Releases
 ```
 
 #### Option 3: Publish to Private npm Registry
@@ -259,11 +226,11 @@ code-review:
       - .cache/huggingface/          # Embedding model (cached)
   before_script:
     - apt-get update && apt-get install -y curl git
-    # Download CLI binary to cached directory
-    - curl -L -o .code-review-cli https://github.com/your-org/code-review-agent/releases/latest/download/code-review-linux-x64
-    - chmod +x .code-review-cli
+    # Download CLI package (source + built-in rules)
+    - curl -L https://github.com/your-org/code-review-agent/releases/latest/download/code-review-agent-linux-x64.tar.gz | tar xz
+    - cd code-review-agent && bun install && cd ..
   script:
-    - ./.code-review-cli             # Auto-detects MR changes
+    - bun run code-review-agent/src/index.ts    # Auto-detects MR changes
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 ```

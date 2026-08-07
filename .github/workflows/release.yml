@@ -1,0 +1,29 @@
+name: Release CLI
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Package CLI
+        run: |
+          mkdir -p dist/code-review-agent
+          cp -r src rules package.json bun.lock dist/code-review-agent/
+          tar -czf dist/code-review-agent-linux-x64.tar.gz -C dist code-review-agent
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/code-review-agent-linux-x64.tar.gz
