@@ -218,98 +218,82 @@ bun run src/indexRules.ts clear
 
 ## Demo
 
-以下是对 `src/indexRules.ts` 的真实 review 输出：
+### 带影响分析的 Review（CodeGraph）
+
+对 `src/llm/embedding.ts` 进行跨文件影响分析：
+
+```
+$ bun run src/index.ts "review src/llm/embedding.ts，重点关注改动对其他文件的影响"
+
+🔍 正在分析...
+📊 同步代码图谱...
+  ✅ Indexed 19 files — 136 nodes, 235 edges
+
+🔧 [1/20] gitDiff { file: "src/llm/embedding.ts" }
+🔧 [1/20] readFile { path: "src/llm/embedding.ts" }
+🔧 [2/20] analyzeImpact { symbol: "embed" }          ← 影响范围分析
+🔧 [2/20] analyzeImpact { symbol: "embedBatch" }
+🔧 [2/20] getCallChain { symbol: "embed", direction: "callers" }  ← 调用链
+🔧 [2/20] getCallChain { symbol: "embedBatch", direction: "callers" }
+🔧 [3/20] readFile { path: "src/rag/vectorStore.ts" } ← 读取受影响文件
+🔧 [3/20] readFile { path: "src/agent/agent.ts" }
+🔧 [3/20] readFile { path: "src/tools/searchKnowledge.ts" }
+```
+
+#### 🔴 必须修复 — 通过调用链发现竞态条件
+
+**`getExtractor()` 存在竞态条件** — `buildSystemPrompt → search → embed` 和 `indexRules → indexDocument → embedBatch` 并发调用时，会重复加载模型导致内存泄漏。
+
+```typescript
+let extractor: FeatureExtractor | null = null;
+
+async function getExtractor(): Promise<FeatureExtractor> {
+  if (extractor) return extractor;          // ← 没有锁
+  extractor = await pipeline(...);           // ← 第二个调用者也会进入这里
+  return extractor;
+}
+```
+
+**修复**：缓存 Promise 本身而非 resolved 后的值。
+
+---
+
+#### CodeGraph 识别的影响范围
+
+```
+src/llm/embedding.ts
+├── embed() ────────► vectorStore.ts:search() ────────► agent.ts:buildSystemPrompt()
+│                    │                                  ├── searchKnowledge.ts
+│                    │
+├── embedBatch() ───► vectorStore.ts:indexDocument() ──► indexDocument.ts
+│                                                       └── indexRules.ts
+└── getExtractor() — 被 embed() 和 embedBatch() 共享
+```
+
+| 严重程度 | 数量 |
+|---------|------|
+| 🔴 必须修复 | 1（通过调用链发现竞态条件） |
+| 🟡 建议修复 | 4 |
+| 🟢 可选优化 | 2 |
+
+---
+
+### 基础 Review
+
+不带 CodeGraph 的简单 review：
 
 ```
 $ bun run src/index.ts "review src/indexRules.ts"
 
-🔍 正在分析...
-
-🔧 [1/20] 调用工具: gitDiff { file: "src/indexRules.ts", staged: false }
-🔧 [1/20] 调用工具: readFile { path: "src/indexRules.ts" }
-🔧 [2/20] 调用工具: readFile { path: "src/rag/vectorStore.ts" }
-🔧 [2/20] 调用工具: readFile { path: "src/llm/embedding.ts" }
-🔧 [3/20] 调用工具: saveReview { codeType: "TypeScript+Bun CLI工具" }
-
-📋 Review 结果:
+🔧 [1/20] gitDiff { file: "src/indexRules.ts" }
+🔧 [1/20] readFile { path: "src/indexRules.ts" }
+🔧 [2/20] readFile { path: "src/rag/vectorStore.ts" }
+🔧 [3/20] saveReview { codeType: "TypeScript+Bun CLI工具" }
 ```
-
-### 🔴 必须修复
-
-**1. `indexFile:38` — 使用非空断言 `!`，违反 TypeScript 规范**
-
-```typescript
-const name = filePath.split("/").pop()!;
-```
-
-根据项目规范"不要使用 `!` 非空断言"，且硬编码 `/` 在 Windows 上会出问题。建议用 `path.basename()` 替代。
-
----
-
-**2. `indexDir:48` — 路径拼接使用硬编码 `/`**
-
-```typescript
-const fullPath = `${dirPath}/${file}`;
-```
-
-跨平台兼容性问题，应使用 `path.join()`。
-
----
-
-**3. `index case:68-73` — 裸 catch 吞掉所有异常**
-
-```typescript
-try {
-  const stat = await import("fs/promises").then(fs => fs.stat(target));
-  // ...
-} catch {
-  console.error(`❌ 路径不存在: ${target}`);
-}
-```
-
-无论什么原因失败都只提示"路径不存在"，且动态 `import("fs/promises")` 在 Bun 中不必要。
-
----
-
-### 🟡 建议修复
-
-**4. `indexDir:49` — 单文件读取无容错**
-
-```typescript
-const text = await Bun.file(fullPath).text();  // 无检查
-```
-
-某个文件读取失败会中断整个循环，已索引的文件无法回滚。建议加 try-catch 单文件容错。
-
----
-
-**5. 第 59 行 — 顶层日志在不需要 embedding 的命令时产生误导**
-
-```typescript
-console.log("⏳ 加载 embedding 模型...\n");
-```
-
-`list`、`remove`、`clear` 命令不需要 embedding，但仍会打印此日志。
-
----
-
-### 🟢 可选优化
-
-**6. `embedBatch`（`src/llm/embedding.ts`）逐条处理，未真正批量**
-
-函数名叫 `embedBatch` 但实际串行逐条调用，pipeline 应支持数组输入做真正批量推理。
-
----
-
-**7. 缺少 `--help` / `-h` 标志支持**
-
-只有输入未知命令时才显示帮助，建议增加 `--help`、`-h` 支持。
-
----
 
 | 严重程度 | 数量 |
 |---------|------|
-| 🔴 必须修复 | 3 |
+| 🔴 必须修复 | 3（非空断言、硬编码路径、裸 catch） |
 | 🟡 建议修复 | 2 |
 | 🟢 可选优化 | 2 |
 

@@ -212,95 +212,82 @@ bun run src/indexRules.ts clear
 
 ## Demo
 
-Real review output for `src/indexRules.ts`:
+### With Impact Analysis (CodeGraph)
+
+Review `src/llm/embedding.ts` with cross-file impact analysis:
+
+```
+$ bun run src/index.ts "review src/llm/embedding.ts，重点关注改动对其他文件的影响"
+
+🔍 正在分析...
+📊 同步代码图谱...
+  ✅ Indexed 19 files — 136 nodes, 235 edges
+
+🔧 [1/20] gitDiff { file: "src/llm/embedding.ts" }
+🔧 [1/20] readFile { path: "src/llm/embedding.ts" }
+🔧 [2/20] analyzeImpact { symbol: "embed" }          ← 影响范围分析
+🔧 [2/20] analyzeImpact { symbol: "embedBatch" }
+🔧 [2/20] getCallChain { symbol: "embed", direction: "callers" }  ← 调用链
+🔧 [2/20] getCallChain { symbol: "embedBatch", direction: "callers" }
+🔧 [3/20] readFile { path: "src/rag/vectorStore.ts" } ← 读取受影响文件
+🔧 [3/20] readFile { path: "src/agent/agent.ts" }
+🔧 [3/20] readFile { path: "src/tools/searchKnowledge.ts" }
+```
+
+#### 🔴 Must Fix — Race condition found via call chain
+
+**`getExtractor()` has a race condition** — concurrent calls from `buildSystemPrompt → search → embed` and `indexRules → indexDocument → embedBatch` can trigger duplicate model loading.
+
+```typescript
+let extractor: FeatureExtractor | null = null;
+
+async function getExtractor(): Promise<FeatureExtractor> {
+  if (extractor) return extractor;          // ← no lock
+  extractor = await pipeline(...);           // ← second caller also enters here
+  return extractor;
+}
+```
+
+**Fix**: Cache the Promise itself instead of the resolved value.
+
+---
+
+#### Impact scope identified by CodeGraph
+
+```
+src/llm/embedding.ts
+├── embed() ────────► vectorStore.ts:search() ────────► agent.ts:buildSystemPrompt()
+│                    │                                  ├── searchKnowledge.ts
+│                    │
+├── embedBatch() ───► vectorStore.ts:indexDocument() ──► indexDocument.ts
+│                                                       └── indexRules.ts
+└── getExtractor() — shared by embed() and embedBatch()
+```
+
+| Severity | Count |
+|----------|-------|
+| 🔴 Must Fix | 1 (race condition via call chain) |
+| 🟡 Suggested | 4 |
+| 🟢 Optional | 2 |
+
+---
+
+### Basic Review
+
+Simple review without CodeGraph:
 
 ```
 $ bun run src/index.ts "review src/indexRules.ts"
 
-🔍 Analyzing...
-
-🔧 [1/20] Tool: gitDiff { file: "src/indexRules.ts", staged: false }
-🔧 [1/20] Tool: readFile { path: "src/indexRules.ts" }
-🔧 [2/20] Tool: readFile { path: "src/rag/vectorStore.ts" }
-🔧 [2/20] Tool: readFile { path: "src/llm/embedding.ts" }
-🔧 [3/20] Tool: saveReview { codeType: "TypeScript+Bun CLI工具" }
-
-📋 Review Result:
+🔧 [1/20] gitDiff { file: "src/indexRules.ts" }
+🔧 [1/20] readFile { path: "src/indexRules.ts" }
+🔧 [2/20] readFile { path: "src/rag/vectorStore.ts" }
+🔧 [3/20] saveReview { codeType: "TypeScript+Bun CLI工具" }
 ```
-
-### 🔴 Must Fix
-
-**1. `indexFile:38` — Non-null assertion `!` violates TypeScript standards**
-
-```typescript
-const name = filePath.split("/").pop()!;
-```
-
-Use `path.basename()` instead for cross-platform safety.
-
----
-
-**2. `indexDir:48` — Hardcoded `/` in path concatenation**
-
-```typescript
-const fullPath = `${dirPath}/${file}`;
-```
-
-Use `path.join()` for cross-platform compatibility.
-
----
-
-**3. `index case:68-73` — Bare catch swallows all exceptions**
-
-```typescript
-try {
-  const stat = await import("fs/promises").then(fs => fs.stat(target));
-} catch {
-  console.error(`❌ Path not found: ${target}`);
-}
-```
-
-All failures show "path not found" regardless of actual cause. Use static import and detailed error handling.
-
----
-
-### 🟡 Suggested Fix
-
-**4. `indexDir:49` — No per-file error tolerance**
-
-```typescript
-const text = await Bun.file(fullPath).text();  // No check
-```
-
-One file failure breaks the entire loop. Add try-catch per file.
-
----
-
-**5. Line 59 — Misleading log for non-embedding commands**
-
-```typescript
-console.log("⏳ Loading embedding model...\n");
-```
-
-`list`, `remove`, `clear` commands don't need embedding but still print this.
-
----
-
-### 🟢 Optional Optimization
-
-**6. `embedBatch` is serial, not truly batch**
-
-Function name suggests batch processing but runs sequentially.
-
----
-
-**7. Missing `--help` / `-h` flag support**
-
----
 
 | Severity | Count |
 |----------|-------|
-| 🔴 Must Fix | 3 |
+| 🔴 Must Fix | 3 (non-null assertion, hardcoded path, bare catch) |
 | 🟡 Suggested | 2 |
 | 🟢 Optional | 2 |
 
