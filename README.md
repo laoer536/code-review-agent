@@ -92,10 +92,8 @@ Without arguments, the priority is:
 #### Option 1: Build Locally
 
 ```bash
-# Package source (src + rules + package.json)
-mkdir -p dist/code-review-agent
-cp -r src rules package.json bun.lock dist/code-review-agent/
-tar -czf dist/code-review-agent.tar.gz -C dist code-review-agent
+bun run build.ts
+# Outputs dist/code-review-agent/ + dist/code-review-agent/run.sh
 ```
 
 #### Option 2: Publish to GitHub Releases
@@ -228,9 +226,8 @@ code-review:
     - apt-get update && apt-get install -y curl git
     # Download CLI package (source + built-in rules)
     - curl -L https://github.com/your-org/code-review-agent/releases/latest/download/code-review-agent-linux-x64.tar.gz | tar xz
-    - cd code-review-agent && bun install && cd ..
   script:
-    - bun run code-review-agent/src/index.ts    # Auto-detects MR changes
+    - code-review-agent/run.sh    # Auto-detects MR changes (auto bun install on first run)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 ```
@@ -240,11 +237,12 @@ code-review:
 When you create a Merge Request, the pipeline automatically:
 
 ```
-1. Downloads CLI binary (cached)
-2. Syncs CodeGraph index (cached)
-3. Indexes your rules from .code-review/rules/
-4. Analyzes MR changes (branch vs target branch)
-5. Outputs review results in pipeline logs
+1. Downloads CLI source package (cached)
+2. Auto bun install (first run)
+3. Syncs CodeGraph index (cached)
+4. Indexes rules from .code-review/rules/ (incremental)
+5. Analyzes MR changes (branch vs target branch)
+6. Outputs review results in pipeline logs
 ```
 
 ### Rules Management

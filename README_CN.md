@@ -91,10 +91,8 @@ bun run src/index.ts "检查 src/agent/ 目录的代码质量"
 #### 方式一：本地打包
 
 ```bash
-# 打包源码包（src + rules + package.json）
-mkdir -p dist/code-review-agent
-cp -r src rules package.json bun.lock dist/code-review-agent/
-tar -czf dist/code-review-agent.tar.gz -C dist code-review-agent
+bun run build.ts
+# 输出 dist/code-review-agent/ + dist/code-review-agent/run.sh
 ```
 
 #### 方式二：发布到 GitHub Releases
@@ -227,9 +225,8 @@ code-review:
     - apt-get update && apt-get install -y curl git
     # 下载 CLI 包（源码 + 内置规则）
     - curl -L https://github.com/your-org/code-review-agent/releases/latest/download/code-review-agent-linux-x64.tar.gz | tar xz
-    - cd code-review-agent && bun install && cd ..
   script:
-    - bun run code-review-agent/src/index.ts    # 自动检测 MR 变更
+    - code-review-agent/run.sh    # 自动检测 MR 变更（首次自动 bun install）
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
 ```
@@ -239,11 +236,12 @@ code-review:
 创建 Merge Request 后，流水线自动：
 
 ```
-1. 下载 CLI 二进制文件（缓存）
-2. 同步 CodeGraph 索引（缓存）
-3. 索引 .code-review/rules/ 中的规则
-4. 分析 MR 变更（分支 vs 目标分支）
-5. 在流水线日志中输出 review 结果
+1. 下载 CLI 源码包（缓存）
+2. 自动 bun install（首次）
+3. 同步 CodeGraph 索引（缓存）
+4. 索引 .code-review/rules/ 中的规则（增量检测）
+5. 分析 MR 变更（分支 vs 目标分支）
+6. 在流水线日志中输出 review 结果
 ```
 
 ### 规则管理
