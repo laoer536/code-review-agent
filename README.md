@@ -287,10 +287,13 @@ $ code-review
 
 ```
 src/
-├── index.ts                  # Review CLI entry
+├── index.ts                  # Review CLI entry (assembles Workflow)
 ├── indexRules.ts             # Rule indexing CLI entry
+├── workflow/
+│   ├── engine.ts             # Workflow engine (ReviewContext + runWorkflow)
+│   └── steps.ts              # Workflow Steps (syncGraph/syncRules/buildPrompt/agentReview)
 ├── agent/
-│   ├── agent.ts              # Agent Loop (multi-turn tool calling)
+│   ├── agent.ts              # Pure Agent loop (LLM + tool calling)
 │   ├── prompt.ts             # System Prompt (review dimensions + output format)
 │   └── types.ts              # Type definitions
 ├── llm/
@@ -328,11 +331,29 @@ rules/                        # Example rule files (customizable)
 
 ## Core Modules
 
+### Workflow + Agent Hybrid Architecture
+
+**Approach A: Workflow with embedded Agent Steps** — clear separation of concerns:
+
+```
+index.ts → runWorkflow(steps, ctx)
+              │
+              ├─ Step 1: stepSyncGraph      ← Deterministic (CodeGraph sync)
+              ├─ Step 2: stepSyncRules      ← Deterministic (rule indexing, incremental)
+              ├─ Step 3: stepBuildPrompt    ← Deterministic (assemble system prompt)
+              └─ Step 4: stepAgentReview    ← Agent (LLM reasoning + tool calling loop)
+```
+
+**Workflow** (deterministic) handles initialization, data prep, index syncing.
+**Agent** (LLM-driven) handles reasoning, tool calling, and review generation.
+
+Each Step receives a `ReviewContext` and returns an updated one. Data flows through the Workflow.
+
 ### Agent Loop
 
-Classic ReAct loop (Reasoning + Acting):
+The Agent's internal ReAct loop (Reasoning + Acting):
 
-1. User query + system prompt → send to LLM
+1. system prompt + user query → send to LLM
 2. LLM returns tool_calls → execute tools → append results to messages
 3. Repeat until LLM returns plain text (or max 20 iterations)
 

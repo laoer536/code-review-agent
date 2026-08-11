@@ -286,10 +286,13 @@ $ code-review
 
 ```
 src/
-├── index.ts                  # Review CLI 入口
+├── index.ts                  # Review CLI 入口（组装 Workflow 并执行）
 ├── indexRules.ts             # 规则索引 CLI 入口
+├── workflow/
+│   ├── engine.ts             # Workflow 引擎（ReviewContext + runWorkflow）
+│   └── steps.ts              # Workflow Steps（syncGraph/syncRules/buildPrompt/agentReview）
 ├── agent/
-│   ├── agent.ts              # Agent Loop（多轮工具调用）
+│   ├── agent.ts              # 纯 Agent 推理循环（LLM + 工具调用）
 │   ├── prompt.ts             # System Prompt（审查维度 + 输出格式）
 │   └── types.ts              # 类型定义
 ├── llm/
@@ -327,11 +330,29 @@ rules/                        # 示例规则文件（用户可自定义）
 
 ## 核心模块
 
+### Workflow + Agent 混合架构
+
+采用**方案 A：Workflow 内嵌 Agent Step**，职责分离：
+
+```
+index.ts → runWorkflow(steps, ctx)
+              │
+              ├─ Step 1: stepSyncGraph      ← 确定性（CodeGraph 同步）
+              ├─ Step 2: stepSyncRules      ← 确定性（规则索引，增量检测）
+              ├─ Step 3: stepBuildPrompt    ← 确定性（组装 system prompt）
+              └─ Step 4: stepAgentReview    ← Agent（LLM 推理 + 工具调用循环）
+```
+
+**Workflow**（确定性流程）负责初始化、数据准备、索引同步。
+**Agent**（LLM 驱动）负责推理决策、工具调用、生成审查结论。
+
+每个 Step 接收 `ReviewContext`，返回更新后的 `ReviewContext`，数据沿 Workflow 流向传递。
+
 ### Agent Loop
 
-经典的 ReAct 循环（Reasoning + Acting）：
+Agent 内部的经典 ReAct 循环（Reasoning + Acting）：
 
-1. 用户提问 + system prompt → 发送给 LLM
+1. system prompt + 用户提问 → 发送给 LLM
 2. LLM 返回 tool_calls → 执行工具 → 结果追加到 messages
 3. 重复直到 LLM 返回纯文本（或达到最大 20 轮迭代）
 
