@@ -1,4 +1,6 @@
-import { runAgent } from './agent/agent';
+import { runWorkflow } from './workflow/engine';
+import { stepSyncGraph, stepSyncRules, stepBuildPrompt, stepAgentReview } from './workflow/steps';
+import { getProjectName } from './memory/memory';
 
 /**
  * 获取 MR 目标分支
@@ -105,7 +107,15 @@ if (!question) {
 
 console.log('🔍 正在分析...\n');
 
-const answer = await runAgent(question);
+// ---- Workflow 执行 ----
+const result = await runWorkflow(
+  [stepSyncGraph, stepSyncRules, stepBuildPrompt, stepAgentReview],
+  {
+    question,
+    projectPath: process.cwd(),
+    projectName: await getProjectName(),
+  },
+);
 
 console.log('\n📋 Review 结果:\n');
-console.log(answer);
+console.log(result.review);

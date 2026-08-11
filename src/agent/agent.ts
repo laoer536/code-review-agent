@@ -1,10 +1,5 @@
 import { chat } from '../llm/client';
-import { systemPrompt } from './prompt';
 import { tools, toolDefinitions, validateToolArgs } from '../tools';
-import { getProjectName, getCodeType } from '../memory/memory';
-import { search } from '../rag/vectorStore';
-import { syncGraph } from '../graph/sync';
-import { syncRules } from '../rag/syncRules';
 import type { ChatCompletionMessageParam } from './types';
 
 const MAX_ITERATIONS = 20;
@@ -23,75 +18,18 @@ function callTool(name: string, args: Record<string, unknown>): Promise<string> 
   return (toolFn as (input: typeof validated) => Promise<string>)(validated);
 }
 
-async function buildSystemPrompt(
-  project: string,
-  question: string,
-  context: { graphStatus?: string; rulesStatus?: string },
+/**
+ * 纯 Agent 推理循环
+ * 接收已组装好的 system prompt 和用户消息，执行 LLM + 工具调用循环
+ * 不负责初始化（syncGraph、syncRules 等由 Workflow Step 处理）
+ */
+export async function runAgentLoop(
+  systemPrompt: string,
+  userMessage: string,
 ): Promise<string> {
-  let prompt = systemPrompt;
-
-  // 注入技术栈记忆
-  const codeType = await getCodeType(project);
-  if (codeType) {
-    prompt += `\n\n## 项目记忆\n当前项目 [${project}] 的技术栈：${codeType}。请用该技术栈的最佳实践和常见问题来审查。`;
-  }
-
-  // 注入代码图谱状态
-  if (context.graphStatus) {
-    prompt += `\n\n## 代码图谱\n${context.graphStatus}\n代码图谱已就绪，你可以使用 analyzeImpact 分析修改的影响范围，使用 getCallChain 查看函数调用链。`;
-  }
-
-  // 注入可用规则
-  if (context.rulesStatus) {
-    prompt += `\n\n## 可用规则\n${context.rulesStatus}\n规则已索引，你可以用 searchKnowledge 搜索相关规则作为审查参考。`;
-  }
-
-  // RAG：检索相关知识
-  try {
-    const results = await search(question, 3);
-    if (results.length > 0) {
-      const knowledge = results.map((r) => `- [${r.source}] ${r.text}`).join('\n');
-      prompt += `\n\n## 参考知识\n以下是与本次 review 相关的知识库内容，请参考：\n${knowledge}`;
-    }
-  } catch {
-    // 知识库为空或未初始化，忽略
-  }
-
-  return prompt;
-}
-
-export async function runAgent(question: string): Promise<string> {
-  if (!question?.trim()) {
-    return '请提供要审查的内容';
-  }
-
-  const project = await getProjectName();
-
-  // 同步 CodeGraph 索引（首次 init，后续 sync）
-  let graphStatus: string | undefined;
-  console.log('📊 同步代码图谱...');
-  try {
-    graphStatus = await syncGraph(process.cwd());
-    console.log(graphStatus);
-  } catch (err) {
-    console.warn('⚠️ CodeGraph 同步失败，跳过图谱功能:', err);
-  }
-
-  // 索引目标项目的规则文件
-  let rulesStatus: string | undefined;
-  console.log('📚 索引规则...');
-  try {
-    rulesStatus = await syncRules(process.cwd());
-    console.log(rulesStatus);
-  } catch (err) {
-    console.warn('⚠️ 规则索引失败，跳过规则功能:', err);
-  }
-
-  const system = await buildSystemPrompt(project, question, { graphStatus, rulesStatus });
-
   const messages: ChatCompletionMessageParam[] = [
-    { role: 'system', content: system },
-    { role: 'user', content: question },
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userMessage },
   ];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
